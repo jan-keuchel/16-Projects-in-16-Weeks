@@ -1,0 +1,18 @@
+Project iedeas:
+- Guess a number
+- Hangman
+- Fully connected graph
+- Space Invaders
+- CLI Todo app
+  - Every Todo contains: Name, Due-Date, Priority, Status (Todo, Working, Done)
+  - Functions:
+    - Create new Todo list
+    - Print Todo list
+      - Everything
+      - filter by priority
+    - Add item to Todo list
+    - Change status of item
+    - delete item from list
+    - Change priority of item
+    - Change Due-Date of item
+    - Delete Todo list
