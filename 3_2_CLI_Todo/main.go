@@ -20,6 +20,7 @@ type Entry struct {
 	status 	 uint8
 }
 
+// write_entry writes the values of a todo item (entry) to the todo list 'list_name'.
 func (e Entry) write_entry(list_name string) int {
 
 	var builder strings.Builder
@@ -90,6 +91,8 @@ func main() {
 		fmt.Printf("-c <list_name>: Create new todo list\n")
 		fmt.Printf("-d <list_name>: Delete todo list\n")
 		fmt.Printf("-l <list_name> -p number: List todo items of the list with a given priority. 0 for every item.\n")
+		fmt.Printf("-a <list_name> <due_date DD.MM.YYYY> <priority [1, 2, 3]> <status [0, 1, 2]>: Add an entry with name, due-date, priority and status to a list.\n")
+		fmt.Printf("-s <list_name> <task_name> <new_status>: Change the status of an item in a certain list.\n")
 	}
 
 	// for i, arg := range os.Args {
@@ -144,6 +147,10 @@ func main() {
 					e := Entry{ os.Args[i+2], t, uint8(priority), uint8(status) }
 					e.write_entry(os.Args[i+1])
 				}
+			case 's':
+				if i + 3 < n {
+					update_task_status(os.Args[i+1], os.Args[i+2], os.Args[i+3])
+				}
 			}
 		}
 
@@ -197,6 +204,8 @@ func delete_list(list_name string) int {
 
 }
 
+// csv_to_strings takes in a file name of a csv file and returns a slice of string slices with the contents
+// of the csv file.
 func csv_to_strings(csv_name string) [][]string {
 
 	file, err := os.Open(csv_name)
@@ -217,6 +226,44 @@ func csv_to_strings(csv_name string) [][]string {
 
 }
 
+func get_list_entries(list_name string) []Entry {
+
+	var entries_s [][]string = csv_to_strings(list_name)
+
+	var entries []Entry
+	for _, entry := range entries_s {
+		var e Entry
+		e.name = entry[0]
+
+		t, err := time.Parse("02.01.2006", entry[1])
+		if err != nil {
+			fmt.Printf("Error while parsing string to date.\n")
+			log.Fatal(err)
+		}
+		e.due_date = t
+
+		priority, err := strconv.ParseUint(entry[2], 10, 8)
+		if err != nil {
+			fmt.Println("Error parsing string to uint8 (priority):\n", err)
+			log.Fatal(err)
+		}
+		e.priority = uint8(priority)
+
+		status, err := strconv.ParseUint(entry[3], 10, 8)
+		if err != nil {
+			fmt.Println("Error parsing string to uint8 (status):\n", err)
+			log.Fatal(err)
+		}
+		e.status = uint8(status)
+
+		entries = append(entries, e)
+
+	}
+
+	return entries
+
+}
+
 // print_list prints the contents of the list 'list_name' to stdout.
 // If priority is 0, every item will be printed. Othewise only items with the given priority
 // will be printed to stdout.
@@ -230,38 +277,8 @@ func print_list(list_name string, priority uint8) int {
 
 	if priority < 4 {
 
-		var entries_s [][]string = csv_to_strings(list_name)
-
-		var entries []Entry
-		for _, entry := range entries_s {
-			var e Entry
-			e.name = entry[0]
-
-			t, err := time.Parse("02.01.2006", entry[1])
-			if err != nil {
-				fmt.Printf("Error while parsing string to date.\n")
-				log.Fatal(err)
-			}
-			e.due_date = t
-
-			priority, err := strconv.ParseUint(entry[2], 10, 8)
-			if err != nil {
-				fmt.Println("Error parsing string to uint8 (priority):\n", err)
-				log.Fatal(err)
-			}
-			e.priority = uint8(priority)
-
-			status, err := strconv.ParseUint(entry[3], 10, 8)
-			if err != nil {
-				fmt.Println("Error parsing string to uint8 (status):\n", err)
-				log.Fatal(err)
-			}
-			e.status = uint8(status)
-
-			entries = append(entries, e)
-
-		}
-
+		var entries []Entry = get_list_entries(list_name)
+		
 		for _, entry := range entries {
 			if priority == 0 || priority == entry.priority {
 				entry.print()
@@ -275,6 +292,41 @@ func print_list(list_name string, priority uint8) int {
 	}
 
 	return 0
+
+}
+
+// update_task_status changes to status of the task 'task_name' in the list 'list_name' to 'status'.
+func update_task_status(list_name string, task_name string, status string) {
+
+	if !list_exists(list_name) {
+		fmt.Printf("The list '%s' does not exist. Create it using ./codo -c %s.", list_name, list_name)
+		return
+	}
+
+	var entries_s [][]string = csv_to_strings(list_name)
+
+	for i, entry := range entries_s {
+		if task_name == entry[0] {
+			entries_s[i][3] = status
+		}
+	}
+
+	file, err := os.Create(list_name)
+	if err != nil {
+		fmt.Printf("Error while opening file: update_task_status\n")
+		log.Fatal(err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	err = writer.WriteAll(entries_s)
+	if err != nil {
+		fmt.Printf("Error writing to file: update_task_status\n")
+		log.Fatal(err)
+	}
+	writer.Flush()
+
+	fmt.Printf("Updated status of task '%s' in list '%s' successfully.\n", task_name, list_name)
 
 }
 
