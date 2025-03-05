@@ -7,6 +7,7 @@ import (
 	"time"
 	"strings"
 	"strconv"
+	"encoding/csv"
 )
 
 // Entry is a structure that holds a todo-item in a todo-list.
@@ -50,6 +51,37 @@ func (e Entry) write_entry(list_name string) int {
 
 }
 
+// print prints the values of an Entry to stdout
+func (e Entry) print() {
+
+	var prio string
+	switch e.priority {
+	case 1:
+		prio = "Hoch"
+	case 2:
+		prio = "Mittel"
+	case 3:
+		prio = "Niedrig"
+	}
+
+	var stat string
+	switch e.status {
+	case 0:
+		stat = "Todo"
+	case 1:
+		stat = "In Progress"
+	case 2:
+		stat = "Done"
+	}
+
+	fmt.Printf("Name: %-20s due-date: %-15v priority: %-10s status: %-10s\n",
+		e.name,
+		e.due_date,
+		prio,
+		stat)
+
+}
+
 func main() {
 	
 	if len(os.Args) == 1 {
@@ -80,12 +112,17 @@ func main() {
 					delete_list(os.Args[i+1])
 				}
 			case 'l':
-				if i + 2 < n {
+				if i + 3 < n {
 					if os.Args[i+2][0] == '-' && os.Args[i+2][1] == 'p' {
-						fmt.Printf("List list with priority %v\n", os.Args[i+2][1])
-					} else {
-						fmt.Printf("Please provide a priority to filter by.\n")
-					}
+						priority, err := strconv.ParseUint(os.Args[i+3], 10, 8)
+						if err != nil {
+							fmt.Println("Error parsing string to uint8 (priority):\n", err)
+							return
+						}
+						print_list(os.Args[i+1], uint8(priority))
+					} 
+				} else {
+					fmt.Printf("Please provide a priority to filter by.\n")
 				}
 			case 'a':
 				if i + 5 < n {
@@ -160,6 +197,26 @@ func delete_list(list_name string) int {
 
 }
 
+func csv_to_strings(csv_name string) [][]string {
+
+	file, err := os.Open(csv_name)
+	if err != nil {
+		fmt.Printf("Error while opening file at csv conversion:\n")
+		log.Fatal(err)
+	}
+
+	reader := csv.NewReader(file)
+
+	records, err := reader.ReadAll()
+	if err != nil {
+		fmt.Printf("Error while reading csv file:\n")
+		log.Fatal(err)
+	}
+
+	return records
+
+}
+
 // print_list prints the contents of the list 'list_name' to stdout.
 // If priority is 0, every item will be printed. Othewise only items with the given priority
 // will be printed to stdout.
@@ -171,12 +228,50 @@ func print_list(list_name string, priority uint8) int {
 		return 1
 	}
 
-	if priority == 0 {
-		// TODO: print the entire list
-		fmt.Println("Printing the entire list")
+	if priority < 4 {
+
+		var entries_s [][]string = csv_to_strings(list_name)
+
+		var entries []Entry
+		for _, entry := range entries_s {
+			var e Entry
+			e.name = entry[0]
+
+			t, err := time.Parse("02.01.2006", entry[1])
+			if err != nil {
+				fmt.Printf("Error while parsing string to date.\n")
+				log.Fatal(err)
+			}
+			e.due_date = t
+
+			priority, err := strconv.ParseUint(entry[2], 10, 8)
+			if err != nil {
+				fmt.Println("Error parsing string to uint8 (priority):\n", err)
+				log.Fatal(err)
+			}
+			e.priority = uint8(priority)
+
+			status, err := strconv.ParseUint(entry[3], 10, 8)
+			if err != nil {
+				fmt.Println("Error parsing string to uint8 (status):\n", err)
+				log.Fatal(err)
+			}
+			e.status = uint8(status)
+
+			entries = append(entries, e)
+
+		}
+
+		for _, entry := range entries {
+			if priority == 0 || priority == entry.priority {
+				entry.print()
+			}
+		}
+
 	} else {
-		// TODO: print every item with priority of 'priority'
-		fmt.Printf("Printing every item with priority %d", priority)
+
+		fmt.Printf("Invalid priority to filter by given. Can be 0, 1, 2 or 3.\n")
+		
 	}
 
 	return 0
