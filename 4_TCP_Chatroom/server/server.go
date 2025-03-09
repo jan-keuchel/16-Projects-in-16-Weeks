@@ -6,8 +6,6 @@ import (
 	"sync"
 )
 
-// --------------- TASK 4 ---------------
-
 type Message struct {
 	senderConn  net.Conn
 	payload  	[]byte
