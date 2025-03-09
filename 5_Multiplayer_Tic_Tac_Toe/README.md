@@ -4,7 +4,10 @@
 The goal is to build a terminal based multiplayer Tic-tac-toe game where one can start a server and then connect two clients to it via TCP.
 
 ## Features
-- [ ] Single file with control via input parameters (Chooese between server and client)
+- [ ] Single file with control via terminal interaction (Chooese between server and client)
+    - [ ] "Welcome to Tic-Tac-Toe, [H]ost, [C]lient:"
+    - [ ] (H) -> "Port:"
+    - [ ] (C) -> "'<IP>:<Port>':"
 - [ ] Two players allowed:
     - [ ] As long as one player is present the game doesn't start. If another player joins, the game begins.
     - [ ] First player is X, second player is O
