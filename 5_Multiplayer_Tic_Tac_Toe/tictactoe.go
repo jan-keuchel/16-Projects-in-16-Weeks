@@ -104,6 +104,13 @@ func (s *Server) listenToClientConnection(conn net.Conn) {
 
 	fmt.Println("[Server] New Client:", conn.RemoteAddr().String())
 
+	greeting := "Welcome to the Tic-Tac-Toe Server."
+	_, err := conn.Write([]byte(greeting))
+	if err != nil {
+		fmt.Println("[Server] Error sending greeting message:", err)
+		return
+	}
+
 	buf := make([]byte, 2048)
 	for {
 
@@ -181,7 +188,7 @@ func (c *Client) listenToServer(conn net.Conn) {
 			continue
 		}
 		data := buf[:n]
-		fmt.Println("[Cleint] Received:\n", data)
+		fmt.Println("[Cleint] Received:", string(data))
 	}
 
 }
