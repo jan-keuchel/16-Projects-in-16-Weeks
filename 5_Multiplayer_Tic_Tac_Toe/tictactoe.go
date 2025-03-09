@@ -24,6 +24,7 @@ type Server struct {
 
 }
 
+// Returns a pointer to an initialized Server
 func NewServer(listenAddr string) *Server {
 	return &Server{
 		listenAddr:  listenAddr,
@@ -32,6 +33,8 @@ func NewServer(listenAddr string) *Server {
 	}
 }
 
+// Receives data sent to the server via channel, calls function to process data and
+// sends back the response for the clients
 func (s *Server) broadcast() {
 
 	for input := range s.ch {
@@ -43,6 +46,8 @@ func (s *Server) broadcast() {
 
 }
 
+// Sets up a listener on specified port and waits for clients to connect. 
+// Only accepts incomming connection if there are less than 2 clients connected.
 func (s *Server) acceptClients() {
 
 	fmt.Println("[Server] Setting up listener...")
@@ -63,14 +68,16 @@ func (s *Server) acceptClients() {
 		}
 
 		if len(s.clientConns) < 2 {
-			go s.handleClient(conn)
+			go s.listenToClientConnection(conn)
 		}
 
 	}
 
 }
 
-func (s *Server) handleClient(conn net.Conn) {
+// Adds connection (client) to the map of clients of the server, indefinitely
+// reads from TCP connection and sends the read data into the servers channel.
+func (s *Server) listenToClientConnection(conn net.Conn) {
 
 	defer conn.Close()
 	defer func() {
@@ -101,12 +108,16 @@ func (s *Server) handleClient(conn net.Conn) {
 
 }
 
+// Returns a pointer to a initialized Client struct
 func NewClient(serverAddr string) *Client {
 	return &Client{
 		serverAddr: serverAddr,
 	}
 }
 
+// Establishes a connection to the server with the address specified in the Client
+// struct. Indefinitely reads input from stdin and writes read data to server.
+// Launches Goroutine to listen for server data.
 func (c *Client) connectToServer() {
 
 	fmt.Println("[Client] Connecting to Server at", c.serverAddr, "...")
@@ -144,6 +155,7 @@ func (c *Client) connectToServer() {
 
 }
 
+// Indefinitely reads messages via 'conn' from server and prints to stdout.
 func (c *Client) listenToServer(conn net.Conn) {
 
 	buf := make([]byte, 2048)
