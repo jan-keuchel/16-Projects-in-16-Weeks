@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 )
 
 type Message struct {
@@ -28,9 +29,28 @@ func NewServer(listenAddr string) *Server {
 	}
 }
 
+// Sends 'msg' to every client of the server.
+func (s *Server) broadcast(msg string) {
+
+	s.mu.Lock()
+	for clientConn := range s.clientConns {
+		n, err := clientConn.Write([]byte(msg))
+		if err != nil {
+			fmt.Println("[Server] Error while broadcasting to", clientConn.RemoteAddr(), ":", err)
+			continue
+		}
+		if n != len(msg) {
+			fmt.Println("[Server] Error: Couldn't send entire message at broadcast to", clientConn.RemoteAddr(), ".")
+			continue
+		}
+	}
+	s.mu.Unlock()
+
+}
+
 // Receives data sent to the server via channel, calls function to process data and
 // sends back the response for the clients
-func (s *Server) broadcast() {
+func (s *Server) processClientInput() {
 
 	for input := range s.ch {
 
@@ -99,11 +119,21 @@ func (s *Server) listenToClientConnection(conn net.Conn) {
 
 	fmt.Println("[Server] New Client:", conn.RemoteAddr().String())
 
-	greeting := "Welcome to the Tic-Tac-Toe Server."
-	_, err := conn.Write([]byte(greeting))
+	_, err := conn.Write([]byte("Welcome to the Tic-Tac-Toe Server."))
 	if err != nil {
 		fmt.Println("[Server] Error sending greeting message:", err)
 		return
+	}
+	if len(s.clientConns) == 1 {
+		_, err := conn.Write([]byte("You are currently the only client. Waiting for another player to join."))
+		if err != nil {
+			fmt.Println("[Server] Error sending greeting message:", err)
+			return
+		}
+	} else if len(s.clientConns) == 2 {
+		s.broadcast("2 Players connected. Starting game...")
+		time.Sleep(time.Second)
+		// TODO: Start game
 	}
 
 	buf := make([]byte, 2048)

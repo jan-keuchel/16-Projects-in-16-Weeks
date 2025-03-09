@@ -31,7 +31,7 @@ func main() {
 		fmt.Println("Starting server on port", port, "...")
 		
 		server := NewServer(listenAddr)
-		go server.broadcast()
+		go server.processClientInput()
 		server.acceptClients()
 
 	} else if typeInput == "C" {
