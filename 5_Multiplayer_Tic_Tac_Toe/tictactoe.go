@@ -24,16 +24,35 @@ func (c *Client) connectToServer() {
 		fmt.Println("[Client] Error dialing server. Exiting...")
 		return
 	}
+	defer conn.Close()
 	fmt.Println("[Client] Successfully connected to server.")
 
 	go c.listenToServer(conn)
 
-	//TODO: Take input from terminal
+	var input string
+	for {
+
+		_, err := fmt.Scan(&input)
+		if err != nil {
+			fmt.Println("[Client] Error reading input:", err)
+			continue
+		}
+
+		n, err := conn.Write([]byte(input))
+		if err != nil {
+			fmt.Println("[Client] Error writing to server:", err)
+			continue
+		}
+		if n != len(input) {
+			fmt.Printf("[Client] Error: Couldn't write entire input")
+			continue
+		}
+
+	}
 
 }
 
 func (c *Client) listenToServer(conn net.Conn) {
-	defer conn.Close()
 
 	buf := make([]byte, 2048)
 	for {
