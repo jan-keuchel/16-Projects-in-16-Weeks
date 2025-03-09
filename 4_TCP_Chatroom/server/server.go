@@ -111,16 +111,10 @@ func (s *Server) broadcast() {
 
 }
 
-func task4() {
+func main() {
 
 	server := NewServer()
 	go server.broadcast()
 	server.startListeningForclientConns()
-
-}
-
-func main() {
-
-	task4()
 
 }

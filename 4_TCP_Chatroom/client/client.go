@@ -25,20 +25,18 @@ func listenForMessages(conn net.Conn) {
 
 func main() {
 
-	fmt.Println("Client:")
-
 	conn, err := net.Dial("tcp", "localhost:8080")
 	if err != nil {
 		fmt.Println("Client error while dialing server:", err)
 		return
 	}
 	defer conn.Close()
+	fmt.Println("Successfully connected to server.")
 
 	go listenForMessages(conn)
 
 	scanner := bufio.NewScanner(os.Stdin) 
 	for {
-
 		if !scanner.Scan() {
 			if err := scanner.Err(); err != nil {
 				fmt.Println("Client error reading stdin:", err)
@@ -57,7 +55,6 @@ func main() {
 			fmt.Println("Client error: Couldn't write entire line.")
 			continue
 		}
-
 	}
 
 }
