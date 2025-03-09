@@ -67,8 +67,18 @@ func (s *Server) acceptClients() {
 			continue
 		}
 
+		fmt.Println("[Server] New Connection request from client.")
+
 		if len(s.clientConns) < 2 {
 			go s.listenToClientConnection(conn)
+		} else {
+			fmt.Println("[Server] Connection request discarded: Already 2 clients.")
+			_, err := conn.Write([]byte("Server is already full. Closing connection..."))
+			if err != nil {
+				fmt.Println("[Server] Error writing rejection due to full server:", err)
+				continue
+			}
+			conn.Close()
 		}
 
 	}
@@ -78,6 +88,8 @@ func (s *Server) acceptClients() {
 // Adds connection (client) to the map of clients of the server, indefinitely
 // reads from TCP connection and sends the read data into the servers channel.
 func (s *Server) listenToClientConnection(conn net.Conn) {
+
+	fmt.Println("[Server] Adding client to server...")
 
 	defer conn.Close()
 	defer func() {
@@ -89,6 +101,8 @@ func (s *Server) listenToClientConnection(conn net.Conn) {
 	s.mu.Lock()
 	s.clientConns[conn] = true
 	s.mu.Unlock()
+
+	fmt.Println("[Server] New Client:", conn.RemoteAddr().String())
 
 	buf := make([]byte, 2048)
 	for {
@@ -129,6 +143,7 @@ func (c *Client) connectToServer() {
 	defer conn.Close()
 	fmt.Println("[Client] Successfully connected to server.")
 
+	// TODO: properly terminate Goroutine if server is full.
 	go c.listenToServer(conn)
 
 	var input string
