@@ -64,6 +64,63 @@ func (t *TTT) stepGame(cell int, player string) bool {
 // Returns true if he did, false otherwise.
 func (t *TTT) checkForWinner(cell int, player string) bool {
 
+	// horizontal check
+	offset := cell / 3
+	foundWinner := true
+	for i := range 3 {
+		if t.gameBoard[3 * offset + i] != player {
+			foundWinner = false
+			break
+		}
+	}
+	if foundWinner {
+		return true
+	}
+
+	// vertical check
+	offset = cell % 3
+	foundWinner = true
+	for i := range 3 {
+		if t.gameBoard[offset + 3 * i] != player {
+			foundWinner = false
+			break
+		}
+	}
+	if foundWinner {
+		return true
+	}
+
+	// diagonal checks
+	// bottom left or top right corner (Ascending diagonal)
+	// indices 2, 4, 6
+	foundWinner = true
+	if cell == 6 || cell == 2 {
+		base := 2
+		for i := range 3 {
+			if t.gameBoard[base * 2 * i] != player {
+				foundWinner = false
+				break
+			}
+		}
+	}
+	if foundWinner {
+		return true
+	}
+
+	// top left or bottom right corner (Descending diagonal)
+	// indices 0, 4, 8
+	foundWinner = true
+	if cell == 0 || cell == 8 {
+		for i := range 3 {
+			if t.gameBoard[4 * i] != player {
+				foundWinner = false
+				break
+			}
+		}
+	}
+	if foundWinner {
+		return true
+	}
 
 	return false
 
