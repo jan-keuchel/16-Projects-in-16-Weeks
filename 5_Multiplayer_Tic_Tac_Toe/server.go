@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -13,11 +14,12 @@ type Message struct {
 }
 
 type Server struct {
-	listenAddr 	string
-	clientConns map[net.Conn]bool
-	ch  		chan Message
-	mu 			sync.Mutex
-
+	listenAddr 	 string
+	clientConns  map[net.Conn]string
+	ch  		 chan Message
+	mu 			 sync.Mutex
+	game 		 *TTT
+	activeClient net.Conn
 }
 
 // Returns a pointer to an initialized Server
@@ -25,7 +27,8 @@ func NewServer(listenAddr string) *Server {
 	return &Server{
 		listenAddr:  listenAddr,
 		ch:  		 make(chan Message),
-		clientConns: make(map[net.Conn]bool),
+		clientConns: make(map[net.Conn]string),
+		game:        nil,
 	}
 }
 
@@ -48,14 +51,107 @@ func (s *Server) broadcast(msg string) {
 
 }
 
+// sendActivePlayerMessage broadcasts the information of whos
+// turn it is to the players.
+func (s *Server) sendActivePlayerMessage() {
+
+	s.mu.Lock()
+	for client := range s.clientConns {
+
+		if client == s.activeClient {
+			_, err := client.Write([]byte("You are the active player. Make your move:"))
+			if err != nil {
+				fmt.Println("Error writing active player message to active player:", err)
+				continue
+			}
+		} else {
+			_, err := client.Write([]byte("It's not your turn. Waiting..."))
+			if err != nil {
+				fmt.Println("Error writing active player message to inactive player:", err)
+				continue
+			}
+		}
+
+	}
+	s.mu.Unlock()
+
+}
+
+// startGame initializes the game, sets up the figures, chooses starting player,
+// broadcasts the game board and sends the active player message.
+func (s *Server) startGame() {
+
+	s.game = NewTTT()
+
+	s.mu.Lock()
+	setX := false
+	for conn := range s.clientConns {
+		if !setX {
+			s.clientConns[conn] = "X"
+			s.activeClient = conn
+			setX = true
+		} else {
+			s.clientConns[conn] = "O"
+		}
+	}
+	s.mu.Unlock()
+
+	s.broadcast(s.game.printBoard())
+	s.sendActivePlayerMessage()
+
+}
+
 // Receives data sent to the server via channel, calls function to process data and
 // sends back the response for the clients
 func (s *Server) processClientInput() {
 
-	for input := range s.ch {
+	for msg := range s.ch {
 
-		// TODO: handle client input
-		fmt.Printf("[%s]: %s\n", input.sender.RemoteAddr().String(), string(input.payload))
+		fmt.Printf("[%s]: %s\n", msg.sender.RemoteAddr(), string(msg.payload))
+
+		if len(s.clientConns) == 1 {
+			s.broadcast("You're all alone. Why are you talking?")
+			continue
+		}
+
+		if msg.sender != s.activeClient {
+			_, err := msg.sender.Write([]byte("It's not your turn. Please wait!"))
+			if err != nil {
+				fmt.Println("[Server] Error writing 'not your turn' message:", err)
+				continue
+			}
+			// TODO: Handle disconnect request
+		} else {
+
+			if string(msg.payload) < "0" || string(msg.payload) > "8" {
+				fmt.Println("[Server] Client didn't sent num in [0;8].")
+				_, err := msg.sender.Write([]byte("Invalid input: Please send a number from 0 to 8."))
+				if err != nil {
+					fmt.Println("[Server] Error writing wrong input message:", err)
+					continue
+				}
+			}
+
+			cell, err := strconv.Atoi(string(msg.payload))
+			if err != nil {
+				fmt.Println("[Server] Error converting input to int.")
+				continue
+			}
+			if !s.game.stepGame(cell, s.clientConns[s.activeClient]) {
+				fmt.Println("[Server] Client sent taken cell number.")
+				_, err := msg.sender.Write([]byte("That cell is already taken."))
+				if err != nil {
+					fmt.Println("[Server] Error writing taken cell message:", err)
+					continue
+				}
+			} else {
+				s.switchActiveConnection()
+			}
+
+			s.broadcast(s.game.printBoard())
+			s.sendActivePlayerMessage()
+
+		}
 
 	}
 
@@ -85,6 +181,7 @@ func (s *Server) acceptClients() {
 		fmt.Println("[Server] New Connection request from client.")
 
 		if len(s.clientConns) < 2 {
+			s.clientSetup(conn)
 			go s.listenToClientConnection(conn)
 		} else {
 			fmt.Println("[Server] Connection request discarded: Already 2 clients.")
@@ -100,11 +197,75 @@ func (s *Server) acceptClients() {
 
 }
 
-// Adds connection (client) to the map of clients of the server, indefinitely
-// reads from TCP connection and sends the read data into the servers channel.
-func (s *Server) listenToClientConnection(conn net.Conn) {
+// clientSetup manages the client connections of the server and sends a greeting to
+// the client
+func (s *Server) clientSetup(conn net.Conn) {
 
 	fmt.Println("[Server] Adding client to server...")
+
+	s.mu.Lock()
+	s.clientConns[conn] = "T" // Temporary
+	s.mu.Unlock()
+
+	fmt.Println("[Server] New Client:", conn.RemoteAddr())
+
+	_, err := conn.Write([]byte("Welcome to the Tic-Tac-Toe Server."))
+	if err != nil {
+		fmt.Println("[Server] Error sending greeting message:", err)
+		return
+	}
+
+	if len(s.clientConns) == 1 {
+
+		_, err := conn.Write([]byte("You are currently the only client. Waiting for another player to join..."))
+		if err != nil {
+			fmt.Println("[Server] Error sending greeting message:", err)
+			return
+		}
+
+	} else if len(s.clientConns) == 2 {
+
+		s.broadcast("2 Players connected. Starting game...")
+		time.Sleep(time.Second)
+
+		s.startGame()
+
+	}
+
+
+}
+
+// updateActiveConnection sets the servers activeClient - meaning the client who
+// would make the next move - to the given connection if that connection is still
+// present.
+func (s *Server) updateActiveConnection(conn net.Conn) {
+
+	s.mu.Lock()
+	if s.clientConns[conn] != "" {
+		s.activeClient = conn
+	}
+	s.mu.Unlock()
+
+}
+
+// switchActiveConnection changes the active player to the player who is not currently
+// the active player.
+func (s *Server) switchActiveConnection() {
+
+	s.mu.Lock()
+	for client := range s.clientConns {
+		if client != s.activeClient {
+			s.activeClient = client
+			break
+		}
+	}
+	s.mu.Unlock()
+
+}
+
+// Indefinitely reads from TCP connection and sends the read data 
+// into the servers channel.
+func (s *Server) listenToClientConnection(conn net.Conn) {
 
 	defer conn.Close()
 	defer func() {
@@ -112,30 +273,7 @@ func (s *Server) listenToClientConnection(conn net.Conn) {
 		delete(s.clientConns, conn)
 		s.mu.Unlock()
 	}()
-
-	s.mu.Lock()
-	s.clientConns[conn] = true
-	s.mu.Unlock()
-
-	fmt.Println("[Server] New Client:", conn.RemoteAddr().String())
-
-	_, err := conn.Write([]byte("Welcome to the Tic-Tac-Toe Server."))
-	if err != nil {
-		fmt.Println("[Server] Error sending greeting message:", err)
-		return
-	}
-	if len(s.clientConns) == 1 {
-		_, err := conn.Write([]byte("You are currently the only client. Waiting for another player to join."))
-		if err != nil {
-			fmt.Println("[Server] Error sending greeting message:", err)
-			return
-		}
-	} else if len(s.clientConns) == 2 {
-		s.broadcast("2 Players connected. Starting game...")
-		time.Sleep(time.Second)
-		// TODO: Start game
-	}
-
+	
 	buf := make([]byte, 2048)
 	for {
 

@@ -42,7 +42,7 @@ func (c *Client) connectToServer() {
 			fmt.Println("[Client] Error reading input:", err)
 			return
 		}
-		fmt.Println("[Client] Read from terminal:", input)
+		// fmt.Println("[Client] Read from terminal:", input)
 
 		n, err := conn.Write([]byte(input))
 		if err != nil {
@@ -69,7 +69,7 @@ func (c *Client) listenToServer(conn net.Conn) {
 			continue
 		}
 		data := buf[:n]
-		fmt.Println("[Cleint] Received:", string(data))
+		fmt.Printf("[Cleint] Received:\n%s", string(data))
 	}
 
 }
