@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -76,6 +77,7 @@ func (t *TTT) checkForWinner(cell int, player string) bool {
 	if foundWinner {
 		return true
 	}
+	fmt.Println("No horizontal win")
 
 	// vertical check
 	offset = cell % 3
@@ -89,12 +91,13 @@ func (t *TTT) checkForWinner(cell int, player string) bool {
 	if foundWinner {
 		return true
 	}
+	fmt.Println("No vetical win")
 
 	// diagonal checks
 	// bottom left or top right corner (Ascending diagonal)
 	// indices 2, 4, 6
 	foundWinner = true
-	if cell == 6 || cell == 2 {
+	if cell == 6 || cell == 2 || cell == 4 {
 		base := 2
 		for i := range 3 {
 			if t.gameBoard[base * 2 * i] != player {
@@ -102,25 +105,27 @@ func (t *TTT) checkForWinner(cell int, player string) bool {
 				break
 			}
 		}
+		if foundWinner {
+			return true
+		}
 	}
-	if foundWinner {
-		return true
-	}
+	fmt.Println("No ascending diagonal win")
 
 	// top left or bottom right corner (Descending diagonal)
 	// indices 0, 4, 8
 	foundWinner = true
-	if cell == 0 || cell == 8 {
+	if cell == 0 || cell == 8 || cell == 4 {
 		for i := range 3 {
 			if t.gameBoard[4 * i] != player {
 				foundWinner = false
 				break
 			}
 		}
+		if foundWinner {
+			return true
+		}
 	}
-	if foundWinner {
-		return true
-	}
+	fmt.Println("No descending diagonal win")
 
 	return false
 

@@ -145,7 +145,13 @@ func (s *Server) processClientInput() {
 					continue
 				}
 			} else {
-				s.switchActiveConnection()
+				if s.game.checkForWinner(cell, s.clientConns[s.activeClient]) {
+					// TODO: Handle player winning.
+					winMsg := s.clientConns[s.activeClient] + " won the game."
+					s.broadcast(winMsg)
+				} else {
+					s.switchActiveConnection()
+				}
 			}
 
 			s.broadcast(s.game.printBoard())
