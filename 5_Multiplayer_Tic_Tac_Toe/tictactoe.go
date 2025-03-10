@@ -1,27 +1,29 @@
 package main
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 )
 
 type TTT struct {
-	gameBoard  	  [9]string
+	gameBoard  	    [9]string
+	numOfValidMoves int
 }
 
 // Returns a pointer to a struct of a Tic-Tac-Toe game which is initialized to an
 // empty board and a start player of "X"
 func NewTTT() *TTT {
 	return &TTT{
-		gameBoard: [9]string{"_", "_", "_", "_", "_", "_", "_", "_", "_"},
+		gameBoard:  	 [9]string{"_", "_", "_", "_", "_", "_", "_", "_", "_"},
+		numOfValidMoves: 0,
 	}
 }
 
 // Resets the state of the game.
 func (t *TTT) reset() {
 
-	t.gameBoard     = [9]string{"_", "_", "_", "_", "_", "_", "_", "_", "_"}
+	t.gameBoard       = [9]string{"_", "_", "_", "_", "_", "_", "_", "_", "_"}
+	t.numOfValidMoves = 0
 
 }
 
@@ -48,16 +50,20 @@ func (t *TTT) printBoard() string {
 }
 
 // Checks if a move can be made (not already taken), makes that move for the 
-// according player and switches the current player. Returns true if move was made
-// successfully and false if not.
-func (t *TTT) stepGame(cell int, player string) bool {
+// according player and increments the total moves made in the game. 
+// Returns true for the first argument if move was made successfully and false if not.
+// Returns true for the second argument if there is a tie (9 Moves made)
+func (t *TTT) stepGame(cell int, player string) (bool, bool) {
 
 	if t.gameBoard[cell] != "_" {
-		return false
-	} else {
-		t.gameBoard[cell] = player
+		return false, false
+	} 
+	t.gameBoard[cell] = player
+	t.numOfValidMoves++
+	if t.numOfValidMoves < 9 {
+		return true, false
 	}
-	return true
+	return true, true
 
 }
 
@@ -77,7 +83,6 @@ func (t *TTT) checkForWinner(cell int, player string) bool {
 	if foundWinner {
 		return true
 	}
-	fmt.Println("No horizontal win")
 
 	// vertical check
 	offset = cell % 3
@@ -91,7 +96,6 @@ func (t *TTT) checkForWinner(cell int, player string) bool {
 	if foundWinner {
 		return true
 	}
-	fmt.Println("No vetical win")
 
 	// diagonal checks
 	// bottom left or top right corner (Ascending diagonal)
@@ -109,7 +113,6 @@ func (t *TTT) checkForWinner(cell int, player string) bool {
 			return true
 		}
 	}
-	fmt.Println("No ascending diagonal win")
 
 	// top left or bottom right corner (Descending diagonal)
 	// indices 0, 4, 8
@@ -125,7 +128,6 @@ func (t *TTT) checkForWinner(cell int, player string) bool {
 			return true
 		}
 	}
-	fmt.Println("No descending diagonal win")
 
 	return false
 

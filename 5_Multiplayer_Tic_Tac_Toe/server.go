@@ -137,7 +137,9 @@ func (s *Server) processClientInput() {
 				fmt.Println("[Server] Error converting input to int.")
 				continue
 			}
-			if !s.game.stepGame(cell, s.clientConns[s.activeClient]) {
+
+			validMove, tiedGame := s.game.stepGame(cell, s.clientConns[s.activeClient])
+			if !validMove {
 				fmt.Println("[Server] Client sent taken cell number.")
 				_, err := msg.sender.Write([]byte("That cell is already taken."))
 				if err != nil {
@@ -145,8 +147,15 @@ func (s *Server) processClientInput() {
 					continue
 				}
 			} else {
-				if s.game.checkForWinner(cell, s.clientConns[s.activeClient]) {
-					// TODO: Handle player winning.
+				if tiedGame {
+					fmt.Println("[Server] Tied game!")
+					_, err := msg.sender.Write([]byte("It seems like we have a tie here..."))
+					if err != nil {
+						fmt.Println("[Server] Error writing tied game message:", err)
+						s.broadcast(s.game.printBoard())
+						continue
+					}
+				} else if s.game.checkForWinner(cell, s.clientConns[s.activeClient]) {
 					winMsg := s.clientConns[s.activeClient] + " won the game."
 					s.broadcast(winMsg)
 				} else {
