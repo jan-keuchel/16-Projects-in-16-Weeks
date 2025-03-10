@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -59,13 +60,14 @@ func (s *Server) sendActivePlayerMessage() {
 	for client := range s.clientConns {
 
 		if client == s.activeClient {
-			_, err := client.Write([]byte("You are the active player. Make your move:"))
+			msg := "Your turn (" + s.clientConns[s.activeClient] + "). Enter a number from 0 to 8 to make your move:"
+			_, err := client.Write([]byte(msg))
 			if err != nil {
 				fmt.Println("Error writing active player message to active player:", err)
 				continue
 			}
 		} else {
-			_, err := client.Write([]byte("It's not your turn. Waiting..."))
+			_, err := client.Write([]byte("Waiting for your opponent to make his move..."))
 			if err != nil {
 				fmt.Println("Error writing active player message to inactive player:", err)
 				continue
@@ -101,6 +103,26 @@ func (s *Server) startGame() {
 
 }
 
+func (s *Server) displayGameResult(winner net.Conn, tied bool) {
+
+	var builder strings.Builder
+	builder.WriteString("----------------------------\n")
+	builder.WriteString("--------- Result -----------\n")
+	builder.WriteString("----------------------------\n")
+
+	if tied {
+		builder.WriteString("It is a tie!\n")
+	} else {
+		builder.WriteString("The winner of the game: " + s.clientConns[winner] + "\n\n")
+	}
+
+	builder.WriteString("The Board:\n")
+	builder.WriteString(s.game.printBoard())
+
+	s.broadcast(builder.String())
+
+}
+
 // Receives data sent to the server via channel, calls function to process data and
 // sends back the response for the clients
 func (s *Server) processClientInput() {
@@ -123,25 +145,31 @@ func (s *Server) processClientInput() {
 			// TODO: Handle disconnect request
 		} else {
 
-			if string(msg.payload) < "0" || string(msg.payload) > "8" {
-				fmt.Println("[Server] Client didn't sent num in [0;8].")
-				_, err := msg.sender.Write([]byte("Invalid input: Please send a number from 0 to 8."))
+			cell, err := strconv.Atoi(string(msg.payload))
+			if err != nil {
+				fmt.Println("[Server] Error converting input to int.")
+				_, err := msg.sender.Write([]byte("Invalid input: Please enter a number from 0 to 8:"))
 				if err != nil {
 					fmt.Println("[Server] Error writing wrong input message:", err)
 					continue
 				}
-			}
-
-			cell, err := strconv.Atoi(string(msg.payload))
-			if err != nil {
-				fmt.Println("[Server] Error converting input to int.")
 				continue
 			}
+
+			if cell < 0 || cell > 8 {
+				fmt.Println("[Server] Client didn't send num in [0;8].")
+				_, err := msg.sender.Write([]byte("Invalid input: Please enter a number from 0 to 8:"))
+				if err != nil {
+					fmt.Println("[Server] Error writing wrong input message:", err)
+				}
+				continue
+			}
+
 
 			validMove, tiedGame := s.game.stepGame(cell, s.clientConns[s.activeClient])
 			if !validMove {
 				fmt.Println("[Server] Client sent taken cell number.")
-				_, err := msg.sender.Write([]byte("That cell is already taken."))
+				_, err := msg.sender.Write([]byte("The cell is used. Please choose a free cell:"))
 				if err != nil {
 					fmt.Println("[Server] Error writing taken cell message:", err)
 					continue
@@ -149,15 +177,11 @@ func (s *Server) processClientInput() {
 			} else {
 				if tiedGame {
 					fmt.Println("[Server] Tied game!")
-					_, err := msg.sender.Write([]byte("It seems like we have a tie here..."))
-					if err != nil {
-						fmt.Println("[Server] Error writing tied game message:", err)
-						s.broadcast(s.game.printBoard())
-						continue
-					}
+					s.displayGameResult(nil, true)
+					continue
 				} else if s.game.checkForWinner(cell, s.clientConns[s.activeClient]) {
-					winMsg := s.clientConns[s.activeClient] + " won the game."
-					s.broadcast(winMsg)
+					s.displayGameResult(s.activeClient, false)
+					continue
 				} else {
 					s.switchActiveConnection()
 				}
@@ -241,7 +265,7 @@ func (s *Server) clientSetup(conn net.Conn) {
 	} else if len(s.clientConns) == 2 {
 
 		s.broadcast("2 Players connected. Starting game...")
-		time.Sleep(time.Second)
+		time.Sleep(500 * time.Millisecond)
 
 		s.startGame()
 
