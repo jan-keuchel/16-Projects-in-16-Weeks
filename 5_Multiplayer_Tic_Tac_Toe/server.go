@@ -347,19 +347,6 @@ func (s *Server) clientSetup(conn net.Conn) {
 
 }
 
-// updateActiveConnection sets the servers activeClient - meaning the client who
-// would make the next move - to the given connection if that connection is still
-// present.
-func (s *Server) updateActiveConnection(conn net.Conn) {
-
-	s.mu.Lock()
-	if s.clientConns[conn] != "" {
-		s.activeClient = conn
-	}
-	s.mu.Unlock()
-
-}
-
 // switchActiveConnection changes the active player to the player who is not currently
 // the active player.
 func (s *Server) switchActiveConnection() {
