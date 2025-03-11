@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+type CommandHandler func (s *Server, conn net.Conn, payload []byte)
+
+var commands = map[string]CommandHandler{
+	"/anotherOne":  handleAnotherOne,
+	"/quit": 		handleQuit,
+}
+
 type Message struct {
 	sender  net.Conn
 	payload []byte
@@ -103,11 +110,23 @@ func (s *Server) startGame() {
 
 }
 
+// sendRestartRequest sends out a request to the connected clients, asking 
+// whether or not they would like to play another round. If both clients agree
+// the game will start over.
+// Sets the state of the game to 'not running'
+func (s *Server) sendRestartRequest() {
+
+	s.game.gameRunning = false
+	restartMsg := "Would you like to play another round? If so, send '/anotherOne' to the server."
+	s.broadcast(restartMsg)
+
+}
+
 func (s *Server) displayGameResult(winner net.Conn, tied bool) {
 
 	var builder strings.Builder
 	builder.WriteString("----------------------------\n")
-	builder.WriteString("--------- Result -----------\n")
+	builder.WriteString("---------- Result ----------\n")
 	builder.WriteString("----------------------------\n")
 
 	if tied {
@@ -133,6 +152,34 @@ func (s *Server) processClientInput() {
 
 		if len(s.clientConns) == 1 {
 			s.broadcast("You're all alone. Why are you talking?")
+			continue
+		}
+
+
+		// Handle commands
+		pl := string(msg.payload)
+		if strings.HasPrefix(pl, "/") {
+			command := strings.Fields(pl)[0]
+			handler, ok := commands[command]
+			if !ok {
+				fmt.Println("[Server] Received invalid command:", pl)
+				_, err := msg.sender.Write([]byte("That was a invalid command."))
+				if err != nil {
+					fmt.Println("[Server] Error sending 'invalid command' message to client:", err)
+				}
+			}
+
+			handler(s, msg.sender, msg.payload)
+
+			continue
+		}
+
+		if !s.game.gameRunning {
+			fmt.Println("[Server] Input while game isn't running: Ignoring.")
+			_, err := msg.sender.Write([]byte("There is no active game. Your input is being ignored. Enjoy your piece of quiet! :)"))
+			if err != nil {
+				fmt.Println("[Server] Error while sending 'no input while no game is running' message:", err)
+			}
 			continue
 		}
 
@@ -178,9 +225,11 @@ func (s *Server) processClientInput() {
 				if tiedGame {
 					fmt.Println("[Server] Tied game!")
 					s.displayGameResult(nil, true)
+					s.sendRestartRequest()
 					continue
 				} else if s.game.checkForWinner(cell, s.clientConns[s.activeClient]) {
 					s.displayGameResult(s.activeClient, false)
+					s.sendRestartRequest()
 					continue
 				} else {
 					s.switchActiveConnection()
@@ -331,3 +380,14 @@ func (s *Server) listenToClientConnection(conn net.Conn) {
 
 }
 
+func handleAnotherOne(s *Server, conn net.Conn, payload []byte) {
+
+	
+
+}
+
+func handleQuit(s *Server, conn net.Conn, payload []byte) {
+
+	
+
+}

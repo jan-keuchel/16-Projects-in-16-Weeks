@@ -8,6 +8,7 @@ import (
 type TTT struct {
 	gameBoard  	    [9]string
 	numOfValidMoves int
+	gameRunning 	bool
 }
 
 // Returns a pointer to a struct of a Tic-Tac-Toe game which is initialized to an
@@ -16,6 +17,7 @@ func NewTTT() *TTT {
 	return &TTT{
 		gameBoard:  	 [9]string{"_", "_", "_", "_", "_", "_", "_", "_", "_"},
 		numOfValidMoves: 0,
+		gameRunning:  	 true,
 	}
 }
 
@@ -24,6 +26,7 @@ func (t *TTT) reset() {
 
 	t.gameBoard       = [9]string{"_", "_", "_", "_", "_", "_", "_", "_", "_"}
 	t.numOfValidMoves = 0
+	t.gameRunning  	  = true
 
 }
 

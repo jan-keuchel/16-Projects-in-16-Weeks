@@ -69,7 +69,7 @@ func (c *Client) listenToServer(conn net.Conn) {
 			continue
 		}
 		data := buf[:n]
-		fmt.Printf("[Cleint] Received:\n%s", string(data))
+		fmt.Printf("[Cleint] Received:\n%s\n", string(data))
 	}
 
 }
