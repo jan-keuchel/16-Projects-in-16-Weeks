@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -378,7 +379,11 @@ func (s *Server) listenToClientConnection(conn net.Conn) {
 
 		n, err := conn.Read(buf)
 		if err != nil {
-			fmt.Printf("[Server|%s] Error reading from client: %s\n", conn.RemoteAddr().String(), err)
+			if err == io.EOF {
+				fmt.Printf("[Server|%s] Client closed the connection.\n", conn.RemoteAddr())
+				return
+			}
+			fmt.Printf("[Server|%s] Error reading from client: %s\n", conn.RemoteAddr(), err)
 			return
 		}
 		payload := buf[:n]

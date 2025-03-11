@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 )
 
@@ -65,8 +66,12 @@ func (c *Client) listenToServer(conn net.Conn) {
 	for {
 		n, err := conn.Read(buf)
 		if err != nil {
+			if err == io.EOF {
+				fmt.Println("[Client] Server closed connection.")
+				return
+			}
 			fmt.Println("[Client] Error reading message from server:", err)
-			continue
+			return
 		}
 		data := buf[:n]
 		fmt.Printf("[Cleint] Received:\n%s\n", string(data))
