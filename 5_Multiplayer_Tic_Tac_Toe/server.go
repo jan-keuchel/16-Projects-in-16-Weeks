@@ -43,10 +43,18 @@ func NewServer(listenAddr string) *Server {
 	}
 }
 
-// Sends 'msg' to every client of the server.
+// broadcast locks the servers Mutex and sends msg to every client.
 func (s *Server) broadcast(msg string) {
 
 	s.mu.Lock()
+	s.broadcastLocked(msg)
+	s.mu.Unlock()
+
+}
+
+// broadcastLocked expects a locked Mutex and sends msg to every client.
+func (s *Server) broadcastLocked(msg string) {
+
 	for clientConn := range s.clientConns {
 		n, err := clientConn.Write([]byte(msg))
 		if err != nil {
@@ -58,7 +66,6 @@ func (s *Server) broadcast(msg string) {
 			continue
 		}
 	}
-	s.mu.Unlock()
 
 }
 
@@ -367,10 +374,15 @@ func (s *Server) switchActiveConnection() {
 // into the servers channel.
 func (s *Server) listenToClientConnection(conn net.Conn) {
 
-	defer conn.Close()
 	defer func() {
+		conn.Close()
 		s.mu.Lock()
 		delete(s.clientConns, conn)
+		
+		if len(s.clientConns) == 1 {
+			s.broadcastLocked("Your opponent disconnected from the server. Aborting game...\n")
+		}
+
 		s.mu.Unlock()
 	}()
 	
