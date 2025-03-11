@@ -58,14 +58,14 @@ func (t *TTT) printBoard() string {
 // Returns true for the second argument if there is a tie (9 Moves made)
 func (t *TTT) stepGame(cell int, player string) (bool, bool) {
 
+	if t.numOfValidMoves == 9 {
+		return false, true
+	}
 	if t.gameBoard[cell] != "_" {
 		return false, false
 	} 
 	t.gameBoard[cell] = player
 	t.numOfValidMoves++
-	if t.numOfValidMoves < 9 {
-		return true, false
-	}
 	return true, true
 
 }
@@ -107,7 +107,7 @@ func (t *TTT) checkForWinner(cell int, player string) bool {
 	if cell == 6 || cell == 2 || cell == 4 {
 		base := 2
 		for i := range 3 {
-			if t.gameBoard[base * 2 * i] != player {
+			if t.gameBoard[base + 2 * i] != player {
 				foundWinner = false
 				break
 			}
