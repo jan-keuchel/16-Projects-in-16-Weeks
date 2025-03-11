@@ -20,14 +20,13 @@ func main() {
 	if typeInput == "S" {
 
 		fmt.Println("Enter the port to listen on:")
-		var listenAddr string = "localhost:"
 		var port string
 		_, err := fmt.Scan(&port)
 		if err != nil {
 			fmt.Println("Error reading input (port):", err)
 			os.Exit(3)
 		}
-		listenAddr += port
+		listenAddr := ":" + port
 		fmt.Println("Starting server on port", port, "...")
 		
 		server := NewServer(listenAddr)

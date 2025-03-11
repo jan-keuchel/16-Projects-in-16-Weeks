@@ -194,7 +194,7 @@ func (s *Server) processClientInput() {
 			handler, ok := commands[command]
 			if !ok {
 				fmt.Println("[Server] Received invalid command:", pl)
-				_, err := msg.sender.Write([]byte("That was a invalid command."))
+				_, err := msg.sender.Write([]byte("That was an invalid command."))
 				if err != nil {
 					fmt.Println("[Server] Error sending 'invalid command' message to client:", err)
 				}

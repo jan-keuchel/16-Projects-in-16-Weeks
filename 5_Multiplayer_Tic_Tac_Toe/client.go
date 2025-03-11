@@ -26,7 +26,7 @@ func (c *Client) connectToServer() {
 	fmt.Println("[Client] Connecting to Server at", c.serverAddr, "...")
 	conn, err := net.Dial("tcp", c.serverAddr)
 	if err != nil {
-		fmt.Println("[Client] Error dialing server. Exiting...")
+		fmt.Println("[Client] Error dialing server:", err)
 		return
 	}
 	defer conn.Close()
