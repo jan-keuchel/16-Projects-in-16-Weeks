@@ -22,21 +22,23 @@ type Message struct {
 }
 
 type Server struct {
-	listenAddr 	 string
-	clientConns  map[net.Conn]string
-	ch  		 chan Message
-	mu 			 sync.Mutex
-	game 		 *TTT
-	activeClient net.Conn
+	listenAddr 	    string
+	clientConns     map[net.Conn]string
+	ch  		    chan Message
+	mu 			    sync.Mutex
+	game 		    *TTT
+	activeClient    net.Conn
+	restartRequests map[net.Conn]bool
 }
 
 // Returns a pointer to an initialized Server
 func NewServer(listenAddr string) *Server {
 	return &Server{
-		listenAddr:  listenAddr,
-		ch:  		 make(chan Message),
-		clientConns: make(map[net.Conn]string),
-		game:        nil,
+		listenAddr:      listenAddr,
+		ch:  		     make(chan Message),
+		clientConns:     make(map[net.Conn]string),
+		game:            nil,
+		restartRequests: make(map[net.Conn]bool),
 	}
 }
 
@@ -86,14 +88,33 @@ func (s *Server) sendActivePlayerMessage() {
 
 }
 
-// startGame initializes the game, sets up the figures, chooses starting player,
-// broadcasts the game board and sends the active player message.
+// startGame creates a new game struct and calls 'initializeGame'.
 func (s *Server) startGame() {
 
 	s.game = NewTTT()
+	s.initializeGame()
+
+}
+
+// restartGame resets the game board and calls 'initializeGame'.
+func (s *Server) restartGame() {
+	fmt.Println("Restarting game...")
+
+	s.game.reset()
+	s.initializeGame()
+
+}
+
+// initializeGame sets the player characters and a start player. Then broadcasts
+// The gameboard and who is the player whos turn it is. Also resets the requests
+// for a new game sent by the clients.
+func (s *Server) initializeGame() {
+
+	fmt.Println("[Server] Initializing game...")
 
 	s.mu.Lock()
 	setX := false
+	s.restartRequests = make(map[net.Conn]bool)
 	for conn := range s.clientConns {
 		if !setX {
 			s.clientConns[conn] = "X"
@@ -104,6 +125,8 @@ func (s *Server) startGame() {
 		}
 	}
 	s.mu.Unlock()
+
+	fmt.Println("[Server] Done.")
 
 	s.broadcast(s.game.printBoard())
 	s.sendActivePlayerMessage()
@@ -167,6 +190,7 @@ func (s *Server) processClientInput() {
 				if err != nil {
 					fmt.Println("[Server] Error sending 'invalid command' message to client:", err)
 				}
+				continue
 			}
 
 			handler(s, msg.sender, msg.payload)
@@ -380,9 +404,62 @@ func (s *Server) listenToClientConnection(conn net.Conn) {
 
 }
 
+// --------------------------------------
+// ---------- Command Handling ----------
+// --------------------------------------
+
+// handleAnotherOne handles the /anotherOne command to request a game restart.
+// It checks if the game is running and ignores the request if so, prevents
+// duplicate requests from the same client, and tracks restart confirmations from
+// clients. If both clients agree to restart, it initiates a new game by calling
+// restartGame.
 func handleAnotherOne(s *Server, conn net.Conn, payload []byte) {
 
-	
+	fmt.Println("[Server] Handling '/anotherOne' request...")
+
+	// Handle no '/anotherOne' request during game.
+	if s.game.gameRunning {
+		fmt.Println("[Server] Received '/anotherOne' command during a game: Ignoring")
+		_, err := conn.Write([]byte("The game is running. Cannot use '/anotherOne' command during a game. If you would like to restart use '/restart'."))
+		if err != nil {
+			fmt.Println("[Server] Error while sending 'no anotherOne command during game' message:", err)
+		}
+		return
+	}
+
+	// Handle duplicate '/anotherOne' request sending.
+	s.mu.Lock()
+	_, clientAlreadySentRequest := s.restartRequests[conn]
+	if clientAlreadySentRequest {
+		fmt.Println("[Server] Client already sent '/anotherOne' request: Ignoring.")
+		_, err := conn.Write([]byte("You've already sent a request. Please wait for your opponent to agree."))
+		if err != nil {
+			fmt.Println("[Server] Error while sending 'already sent request' message:", err)
+		}
+		return
+	}
+	s.mu.Unlock()
+
+	s.mu.Lock()
+	s.restartRequests[conn] = true
+	if len(s.restartRequests) == 1 {
+		s.mu.Unlock()
+
+		_, err := conn.Write([]byte("Your request has been duely noted. Waiting for you opponent to make a decision..."))
+		if err != nil {
+			fmt.Println("[Server] Error while sending 'anotherOne request noted' message:", err)
+			return
+		}
+
+	} else if len(s.restartRequests) == 2 {
+		s.mu.Unlock()
+
+		s.broadcast("Agreement on playing another game from both clients. Restarting...")
+		s.restartGame()
+	} else {
+		s.mu.Unlock()
+	}
+
 
 }
 
