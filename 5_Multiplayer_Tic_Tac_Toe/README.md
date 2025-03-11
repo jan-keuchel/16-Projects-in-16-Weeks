@@ -16,6 +16,6 @@ The goal is to build a terminal based multiplayer Tic-tac-toe game where one can
         - [x] Terminal graphic representation of the game board
     - [x] Automatic validation of winner with winner- and loser-message
     - [x] Rematch option
-- [ ] Proper connection handling
-    - [ ] Players get notified if opponent disconnects
-    - [ ] Client gets notified and exits cleanly if server shuts down
+- [x] Proper connection handling
+    - [x] Players get notified if opponent disconnects
+    - [x] Client gets notified and exits cleanly if server shuts down
