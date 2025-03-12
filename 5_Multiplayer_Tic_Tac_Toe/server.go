@@ -181,12 +181,6 @@ func (s *Server) processClientInput() {
 
 		fmt.Printf("[%s]: %s\n", msg.sender.RemoteAddr(), string(msg.payload))
 
-		if len(s.clientConns) == 1 {
-			s.broadcast("You're all alone. Why are you talking?")
-			continue
-		}
-
-
 		// Handle commands
 		pl := string(msg.payload)
 		if strings.HasPrefix(pl, "/") {
@@ -206,7 +200,7 @@ func (s *Server) processClientInput() {
 			continue
 		}
 
-		if !s.game.gameRunning {
+		if s.game != nil && !s.game.gameRunning {
 			fmt.Println("[Server] Input while game isn't running: Ignoring.")
 			_, err := msg.sender.Write([]byte("There is no active game. Your input is being ignored. Enjoy your piece of quiet! :)"))
 			if err != nil {
@@ -469,6 +463,21 @@ func handleAnotherOne(s *Server, conn net.Conn, payload []byte) {
 
 func handleQuit(s *Server, conn net.Conn, payload []byte) {
 
-	
+	fmt.Println("[Server] Received quit command from", conn.RemoteAddr())
+	_, err := conn.Write([]byte("Closing connection..."))
+	if err != nil {
+		fmt.Println("[Server] Error sending 'closing connection' message:", err)
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.clientConns, conn)
+	conn.Close()
+
+	s.game = nil
+	s.activeClient = nil
+	s.restartRequests = make(map[net.Conn]bool)
 
 }

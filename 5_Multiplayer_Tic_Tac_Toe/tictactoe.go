@@ -58,15 +58,15 @@ func (t *TTT) printBoard() string {
 // Returns true for the second argument if there is a tie (9 Moves made)
 func (t *TTT) stepGame(cell int, player string) (bool, bool) {
 
-	if t.numOfValidMoves == 9 {
-		return false, true
-	}
 	if t.gameBoard[cell] != "_" {
 		return false, false
 	} 
 	t.gameBoard[cell] = player
 	t.numOfValidMoves++
-	return true, true
+	if t.numOfValidMoves == 9 {
+		return true, true
+	}
+	return true, false
 
 }
 
