@@ -19,3 +19,9 @@ The goal is to build a terminal based multiplayer Tic-tac-toe game where one can
 - [x] Proper connection handling
     - [x] Players get notified if opponent disconnects
     - [x] Client gets notified and exits cleanly if server shuts down
+
+## Reflection and improvements
+- The output in the client terminal is not very easy to follow or intuitive, which could be improved.
+- There should be a help command the send the available options to the client.
+- The current /quit function results in a reading error on the server side. This should definetely be remade.
+- An easier to follow function for the handling of client input.
