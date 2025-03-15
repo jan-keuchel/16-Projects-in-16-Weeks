@@ -116,6 +116,7 @@ func (s *Server) handleClientConnection(conn net.Conn) {
 			if err != nil {
 				if err == io.EOF {
 					fmt.Printf("[Log|%s] Client closed connection.\n", conn.RemoteAddr())
+					return
 				}
 				fmt.Println("[Error] Reading message from client:", err)
 				return

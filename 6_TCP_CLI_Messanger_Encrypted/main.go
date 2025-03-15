@@ -29,9 +29,11 @@ func startServer(port string) {
 
 }
 
-func startClient() {
+func startClient(serverAddr string) {
 
-	fmt.Println("Start client")
+	fmt.Println("Starting client...")
+	client := NewClient(serverAddr)
+	client.connectToServer()
 
 }
 
@@ -47,7 +49,7 @@ func main() {
 
 		if !scanner.Scan() {
 			if err := scanner.Err(); err != nil {
-				fmt.Println("Error reading from stdin:", err)
+				fmt.Println("[Error] Reading from stdin:", err)
 			} else {
 				fmt.Println("Input ended. (EOF)")
 			}
@@ -90,7 +92,35 @@ func main() {
 		startServer(port)
 		
 	case "c", "C":
-		startClient()
+		fmt.Println("Client setup:\nEnter the IP address of the server to connect to:")
+		var ip string
+		if !scanner.Scan() {
+			if err := scanner.Err(); err != nil {
+				fmt.Println("Error reading from stdin:", err)
+			} else {
+				fmt.Println("Input ended. (EOF)")
+			}
+			return
+		}
+		ip = scanner.Text()
+		// TODO: Verify IP address
+		
+		fmt.Printf("Client setup:\nNow enter the port the server at '%s' is listening on:\n", ip)
+		var port string
+		if !scanner.Scan() {
+			if err := scanner.Err(); err != nil {
+				fmt.Println("Error reading from stdin:", err)
+			} else {
+				fmt.Println("Input ended. (EOF)")
+			}
+			return
+		}
+		port = scanner.Text()
+		// TODO: Verify port
+
+		serverAddr := ip + ":" + port
+		startClient(serverAddr)
+
 	}
 
 }
