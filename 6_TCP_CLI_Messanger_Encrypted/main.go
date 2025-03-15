@@ -4,21 +4,10 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"unicode"
 )
 
 var server Server
 
-func isNumeric(s string) bool {
-
-	for _, r := range s {
-		if !unicode.IsDigit(r) {
-			return false
-		}
-	}
-	return true
-
-}
 
 func startServer(port string) {
 
@@ -67,7 +56,7 @@ func main() {
 
 	switch input {
 	case "s", "S":
-		fmt.Println("Server setup:\nEnter the port to listen on for incomming connections:")
+		fmt.Println("\nServer setup:\nEnter the port to listen on for incomming connections:")
 		var port string
 		for {
 
@@ -92,31 +81,49 @@ func main() {
 		startServer(port)
 		
 	case "c", "C":
-		fmt.Println("Client setup:\nEnter the IP address of the server to connect to:")
+		fmt.Println("\nClient setup:\nEnter the IP address of the server to connect to:")
 		var ip string
-		if !scanner.Scan() {
-			if err := scanner.Err(); err != nil {
-				fmt.Println("Error reading from stdin:", err)
-			} else {
-				fmt.Println("Input ended. (EOF)")
+		for {
+
+			if !scanner.Scan() {
+				if err := scanner.Err(); err != nil {
+					fmt.Println("Error reading from stdin:", err)
+				} else {
+					fmt.Println("Input ended. (EOF)")
+				}
+				return
 			}
-			return
+			ip = scanner.Text()
+
+			if verifyIPFormat(ip) {
+				break
+			}
+
+			fmt.Println("Received wrong input. Please provide a valid IP address. That means: 4 numbers in the range of 0 - 255 separated by '.':")
+
 		}
-		ip = scanner.Text()
-		// TODO: Verify IP address
-		
-		fmt.Printf("Client setup:\nNow enter the port the server at '%s' is listening on:\n", ip)
+
+		fmt.Printf("\nClient setup:\nNow enter the port the server at '%s' is listening on:\n", ip)
 		var port string
-		if !scanner.Scan() {
-			if err := scanner.Err(); err != nil {
-				fmt.Println("Error reading from stdin:", err)
-			} else {
-				fmt.Println("Input ended. (EOF)")
+		for {
+
+			if !scanner.Scan() {
+				if err := scanner.Err(); err != nil {
+					fmt.Println("Error reading from stdin:", err)
+				} else {
+					fmt.Println("Input ended. (EOF)")
+				}
+				return
 			}
-			return
+			port = scanner.Text()
+
+			if isNumeric(port) {
+				break
+			}
+
+			fmt.Printf("Received wrong input. Please enter a number to specify the port the server at '%s' is listening on:\n", port)
+
 		}
-		port = scanner.Text()
-		// TODO: Verify port
 
 		serverAddr := ip + ":" + port
 		startClient(serverAddr)
