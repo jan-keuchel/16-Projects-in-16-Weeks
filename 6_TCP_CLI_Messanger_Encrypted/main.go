@@ -4,11 +4,28 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"unicode"
 )
 
-func startServer() {
+var server Server
 
-	fmt.Println("Start server")
+func isNumeric(s string) bool {
+
+	for _, r := range s {
+		if !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
+
+}
+
+func startServer(port string) {
+
+	fmt.Println("Starting server...")
+	listenAddr := ":" + port
+	server := NewServer(listenAddr)
+	server.Start()
 
 }
 
@@ -48,7 +65,30 @@ func main() {
 
 	switch input {
 	case "s", "S":
-		startServer()
+		fmt.Println("Server setup:\nEnter the port to listen on for incomming connections:")
+		var port string
+		for {
+
+			if !scanner.Scan() {
+				if err := scanner.Err(); err != nil {
+					fmt.Println("Error reading from stdin:", err)
+				} else {
+					fmt.Println("Input ended. (EOF)")
+				}
+				return
+			}
+
+			port = scanner.Text()
+			if isNumeric(port) {
+				break
+			}
+
+			fmt.Println("Received wrong input. Please enter a number to specify the port the server will listen on for incomming connections:")
+
+		}
+
+		startServer(port)
+		
 	case "c", "C":
 		startClient()
 	}
