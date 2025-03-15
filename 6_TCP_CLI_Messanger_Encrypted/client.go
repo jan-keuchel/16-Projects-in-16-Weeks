@@ -10,12 +10,14 @@ import (
 
 type Client struct {
 	serverAddr string
+	quitCh 	   chan bool
 }
 
 func NewClient(serverAddr string) *Client {
 	
 	return &Client{
 		serverAddr: serverAddr,
+		quitCh:     make(chan bool),
 	}
 
 }
@@ -32,7 +34,11 @@ func (c *Client) connectToServer() {
 		fmt.Println("[Error] Dialing server at", c.serverAddr, ":", err)
 		return
 	}
-	defer conn.Close()
+	defer func() {
+		close(c.quitCh)
+		conn.Close()
+	}()
+
 	fmt.Println("[Log] Connection established.")
 
 	go c.listenToServer(conn)
@@ -67,19 +73,25 @@ func (c *Client) listenToServer(conn net.Conn) {
 	b := make([]byte, 2048)
 	for {
 
-		n, err := conn.Read(b)
-		if err != nil {
-			if err == io.EOF {
-				fmt.Println("[Log] Server closed connection.")
+		select {
+		case <- c.quitCh:
+			fmt.Printf("[Log] No longer listening to server.")
+			return
+		default:
+			n, err := conn.Read(b)
+			if err != nil {
+				if err == io.EOF {
+					fmt.Println("[Log] Server closed connection.")
+					return
+				}
+				fmt.Println("[Error] Reading from server:", err)
 				return
 			}
-			fmt.Println("[Error] Reading from server:", err)
-			return
+
+			payload := b[:n]
+
+			fmt.Printf("Message from server:\n%s\n", string(payload))
 		}
-
-		payload := b[:n]
-
-		fmt.Printf("Message from server:\n%s\n", string(payload))
 
 	}
 
