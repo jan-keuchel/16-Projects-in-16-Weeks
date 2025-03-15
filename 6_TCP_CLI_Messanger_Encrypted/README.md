@@ -18,19 +18,25 @@ It is also important to have properly managed client connections and close them 
     - [ ] '/register' - initiates the sign up process
         - [ ] Query for username (locally) - No duplicate usernames
         - [ ] query for passowrd (locally)
-    - [ ] '/newChat &ltusername&gt' - Sends a chat request to the user specified
+        - [ ] Generate public-private key-pair
+    - [ ] '/newChat \<username\>' - Sends a chat request to the user specified
         - [ ] The new chat will be assigned an ID
     - [ ] '/listChats' - lists the IDs and names of recipients of every chat
-    - [ ] '/chat &ltID&gt' - initiates switch to chat mode
+    - [ ] '/chat \<ID\>' - initiates switch to chat mode
         - [ ] retrieves the content of the chat, decrypts it and prints it to the screen
         - [ ] If the request is still pending, it is not possible to write messages
         - [ ] If accepted, the CLI now takes input as chat messages
         - [ ] It's possible to write messages to a client who is offline
     - [ ] '/exit' - exits chat mode and returns to overview
-    - [ ] '/deleteChat &ltid&gt' - deletes a chat 
+    - [ ] '/deleteChat \<id\>' - deletes a chat 
     - [ ] '/help' - prints a list of commands along with their descriptions
 - [ ] User Experience
     - [ ] Proper walk through of how to establish the connection
+
+## Open questions
+- [ ] How do I encrypt and decrypt the messages locally on the client?
+- [ ] Do I - locally -  store one key per client I want to write to?
+- [ ] How do I distribute keys in a group chat?
 
 ## Reflection and improvements
 
