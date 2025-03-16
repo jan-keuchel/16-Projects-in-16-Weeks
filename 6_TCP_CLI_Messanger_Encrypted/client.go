@@ -57,8 +57,6 @@ func (c *Client) connectToServer() {
 		}
 		if err := scanner.Err(); err != nil {
 			errCh <- err
-		} else {
-			errCh <- io.EOF
 		}
 
 	}()
