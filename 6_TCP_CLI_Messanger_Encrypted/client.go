@@ -2,11 +2,22 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"strings"
+
+	"golang.org/x/crypto/bcrypt"
 )
+
+type CommandPreprocesser func(c *Client, payload string) (string, error)
+
+var commandRequirementFunctions = map[string]CommandPreprocesser {
+	"/quit": 		preprocessQuit,
+	"/register": 	preprocessRegister,
+}
 
 type Client struct {
 	serverAddr string
@@ -68,6 +79,24 @@ func (c *Client) connectToServer() {
 			fmt.Println("[Log] Stopping client due to server disconnection.")
 			return
 		case input := <- inputCh:
+			if strings.HasPrefix(input, "/") {
+
+				command := strings.Fields(input)[0]
+				preproFunc, ok := commandRequirementFunctions[command]
+				if !ok {
+					fmt.Printf("[Error] Command is not valid: %s\n", command)
+					continue
+				}
+
+				preprocessedCommand, err := preproFunc(c, input)
+				if err != nil {
+					fmt.Println("[Error] Wrong use of command:", err)
+					continue
+				}
+
+				input = preprocessedCommand
+
+			}
 			_, err := conn.Write([]byte(input))
 			if err != nil {
 				fmt.Println("[Error] Writing to server:", err)
@@ -116,3 +145,41 @@ func (c *Client) listenToServer(conn net.Conn) {
 
 }
 
+// -----------------------------
+// ---------- Handler ----------
+// -----------------------------
+
+func preprocessQuit(c *Client, payload string) (string, error) {
+
+	if len(strings.Fields(payload)) != 1 {
+		return "", errors.New("'/quit' command was given the wrong number of arguments. Please just use '/quit' without any further arguments in order to quit the connection to the server.")
+	}
+	return "/quit", nil
+
+}
+
+func preprocessRegister(c *Client, payload string) (string, error) {
+
+	if len(strings.Fields(payload)) != 3 {
+		return "", errors.New("'/register' command was given the wrong number of arguments. Please provide username and password according to the following pattern: '/register <username> <password>'.")
+	}
+
+	slicedPld := strings.Fields(payload)
+	command   := slicedPld[0]
+	username  := slicedPld[1]
+	pwd   	  := []byte(slicedPld[2])
+
+	if len(pwd) > 72 {
+		return "", errors.New("The password given to '/register' was too long. The maximal length is 72 bytes.")
+	}
+
+	pwdHsh, err := bcrypt.GenerateFromPassword(pwd, bcrypt.DefaultCost)
+	if err != nil {
+		return "", errors.New("'/register' failed to hash the provided password.")
+	}
+
+	res := command + " " + username + " " + string(pwdHsh)
+
+	return res, nil
+
+}
