@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"os/signal"
+	"strings"
 	"sync"
+	"syscall"
 )
 
 type Message struct {
@@ -14,7 +19,6 @@ type Message struct {
 
 type Server struct {
 	listenAddr 	 string
-	quitChannels map[net.Conn]<-chan bool
 	clientConns  map[net.Conn] bool
 	msgChannel	 chan Message
 	mu  		 sync.Mutex
@@ -24,7 +28,6 @@ func NewServer(listenAddr string) *Server {
 
 	return &Server{
 		listenAddr:   listenAddr,
-		quitChannels: make(map[net.Conn]<-chan bool),
 		clientConns:  make(map[net.Conn]bool),
 		msgChannel:   make(chan Message),
 	}
@@ -33,8 +36,27 @@ func NewServer(listenAddr string) *Server {
 
 func (s *Server) Start() {
 
-	go s.processMessageChannelInput()
-	s.acceptClientConnections()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var wg sync.WaitGroup
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	wg.Add(2)
+	go s.processMessageChannelInput(ctx, &wg)
+	go s.acceptClientConnections(ctx, &wg)
+
+	select {
+	case <-sigCh:
+		fmt.Println("[Log] Server Received shutdown signal. Initiating shutdown...")
+		cancel()
+	}
+
+	wg.Wait()
+
+	fmt.Println("[Log] Shutdown complete.")
 
 }
 
@@ -46,7 +68,11 @@ func (s *Server) Start() {
 // 	 - Starting up the listener
 // 	 - Waiting for and accepting incomming connections
 // 	 - Starting a new goroutine per incomming connection
-func (s *Server) acceptClientConnections() {
+func (s *Server) acceptClientConnections(ctx context.Context, mainWG *sync.WaitGroup) {
+
+	defer mainWG.Done()
+
+	var wg sync.WaitGroup
 
 	fmt.Println("[Log] Setting up listener...")
 	ln, err := net.Listen("tcp", s.listenAddr)
@@ -59,13 +85,24 @@ func (s *Server) acceptClientConnections() {
 	fmt.Println("[Log] Now listening for incomming client connections...")
 	for {
 
-		conn, err := ln.Accept()
-		if err != nil {
-			fmt.Println("[Error] Accepting incomming connection:", err)
-			continue
-		}
-		go s.handleClientConnection(conn)
+		select {
+		case <-ctx.Done():
+			fmt.Println("[Log] Shutting down listener...")
+			fmt.Println("[Log] Waiting for client handlers to termiante...")
+			wg.Wait()
+			fmt.Println("[Log] All client handlers terminated.")
+			return
+		default:
+			conn, err := ln.Accept()
+			if err != nil {
+				fmt.Println("[Error] Accepting incomming connection:", err)
+				continue
+			}
 
+			wg.Add(1)
+			go s.handleClientConnection(ctx, &wg, conn)
+
+		}
 	}
 
 }
@@ -88,19 +125,19 @@ func (s *Server) acceptClientConnections() {
 //
 // All connection state changes are protected by the server's mutex to ensure
 // thread safety. Connection closure is logged with the client's remote address.
-func (s *Server) handleClientConnection(conn net.Conn) {
-
-	quit := make(<-chan bool)
+func (s *Server) handleClientConnection(ctx context.Context, 
+	 									wg *sync.WaitGroup, 
+	 									conn net.Conn) {
 
 	defer func() {
 		s.mu.Lock()
 		delete(s.clientConns, conn)
 		s.mu.Unlock()
 		conn.Close()
+		wg.Done()
 	}()
 
 	s.mu.Lock()
-	s.quitChannels[conn] = quit
 	s.clientConns[conn] = true
 	s.mu.Unlock()
 
@@ -108,8 +145,8 @@ func (s *Server) handleClientConnection(conn net.Conn) {
 	for {
 
 		select {
-		case <-quit:
-			fmt.Printf("[Log|%s] Shutting down client handler...", conn.RemoteAddr())
+		case <-ctx.Done():
+			fmt.Println("[Log] Shutting down client handler...")
 			return
 		default:
 			n, err := conn.Read(b)
@@ -132,12 +169,34 @@ func (s *Server) handleClientConnection(conn net.Conn) {
 
 }
 
-func (s *Server) processMessageChannelInput() {
+func (s *Server) processMessageChannelInput(ctx context.Context, wg *sync.WaitGroup) {
 
+	defer wg.Done()
+
+	// TODO: How to check continually for ctx.Done() signal. Not just when
+	// receiving input?
 	for msg := range s.msgChannel {
 
-		fmt.Printf("[Log] Message received from %s:\n%s\n", msg.sender.RemoteAddr(), string(msg.payload))
+		select {
+		case <-ctx.Done():
+			fmt.Println("[Log] Shutting down processing of input...")
+			return
+		default:
+			fmt.Printf("[Log] Message received from %s:\n%s\n", msg.sender.RemoteAddr(), string(msg.payload))
+
+			pld := string(msg.payload)
+			if strings.HasPrefix(pld, "/") {
+				fmt.Printf("[Log] Message from %s is a command: '%s'.", msg.sender.RemoteAddr(), pld)
+
+			}
+		}
 
 	}
 
 }
+
+
+// -----------------------------
+// ---------- Handler ----------
+// -----------------------------
+
