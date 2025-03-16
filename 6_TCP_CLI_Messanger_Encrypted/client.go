@@ -35,7 +35,10 @@ func (c *Client) connectToServer() {
 		return
 	}
 	defer func() {
-		close(c.quitCh)
+		_, ok := <- c.quitCh
+		if ok {
+			close(c.quitCh)
+		}
 		conn.Close()
 	}()
 
@@ -43,25 +46,42 @@ func (c *Client) connectToServer() {
 
 	go c.listenToServer(conn)
 
-	scanner := bufio.NewScanner(os.Stdin)
-	var input string
-	for {
+	inputCh := make(chan string)
+	errCh   := make(chan error)
 
-		if !scanner.Scan() {
-			if err := scanner.Err(); err != nil {
-				fmt.Println("[Error] Reading from stdin:", err)
-			} else {
-				fmt.Println("Input ended. (EOF)")
-			}
-			return
+	go func() {
+
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			inputCh <- scanner.Text()
+		}
+		if err := scanner.Err(); err != nil {
+			errCh <- err
+		} else {
+			errCh <- io.EOF
 		}
 
-		input = scanner.Text()
+	}()
 
-		_, err := conn.Write([]byte(input))
-		if err != nil {
-			fmt.Println("[Error] Writing to server:", err)
+	for {
 
+		select {
+		case <-c.quitCh:
+			fmt.Println("[Log] Stopping client due to server disconnection.")
+			return
+		case input := <- inputCh:
+			_, err := conn.Write([]byte(input))
+			if err != nil {
+				fmt.Println("[Error] Writing to server:", err)
+				return
+			}
+		case err := <- errCh:
+			if err != io.EOF {
+				fmt.Println("[Error] Reading input from stdin:", err)
+			} else {
+				fmt.Println("[Error] Input ended (EOF)")
+			}
+			return
 		}
 
 	}
@@ -82,6 +102,7 @@ func (c *Client) listenToServer(conn net.Conn) {
 			if err != nil {
 				if err == io.EOF {
 					fmt.Println("[Log] Server closed connection.")
+					close(c.quitCh)
 					return
 				}
 				fmt.Println("[Error] Reading from server:", err)
