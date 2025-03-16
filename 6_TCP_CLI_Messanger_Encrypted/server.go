@@ -93,7 +93,7 @@ func (s *Server) acceptClientConnections(ctx context.Context, mainWG *sync.WaitG
 
 		select {
 		case <-ctx.Done():
-			fmt.Println("[Log] Shutting down listener...")
+			fmt.Println("[Log] Shutting down: Accepting incomming client connections...")
 			fmt.Println("[Log] Waiting for client handlers to termiante...")
 			wg.Wait()
 			fmt.Println("[Log] All client handlers terminated.")
@@ -197,7 +197,7 @@ func (s *Server) processMessageChannelInput(ctx context.Context, wg *sync.WaitGr
 
 		select {
 		case <-ctx.Done():
-			fmt.Println("[Log] Shutting down processing of input...")
+			fmt.Println("[Log] Shutting down: Processing of message channel...")
 			return
 		case msg :=<- s.msgChannel:
 			fmt.Printf("[Log] Message received from %s:\n%s\n", msg.sender.RemoteAddr(), string(msg.payload))
