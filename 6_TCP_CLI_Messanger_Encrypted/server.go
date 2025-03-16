@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 type Message struct {
@@ -85,6 +86,11 @@ func (s *Server) acceptClientConnections(ctx context.Context, mainWG *sync.WaitG
 	fmt.Println("[Log] Now listening for incomming client connections...")
 	for {
 
+		if err := ln.(*net.TCPListener).SetDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
+			fmt.Println("[Log] Error setting deadline for incomming client connections:", err)
+			return
+		}
+
 		select {
 		case <-ctx.Done():
 			fmt.Println("[Log] Shutting down listener...")
@@ -95,6 +101,9 @@ func (s *Server) acceptClientConnections(ctx context.Context, mainWG *sync.WaitG
 		default:
 			conn, err := ln.Accept()
 			if err != nil {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					continue
+				}
 				fmt.Println("[Error] Accepting incomming connection:", err)
 				continue
 			}
@@ -144,6 +153,12 @@ func (s *Server) handleClientConnection(ctx context.Context,
 	b := make([]byte, 2048)
 	for {
 
+		err := conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+		if err != nil {
+			fmt.Printf("[Error|%s] Setting up Read deadline:\n%s\n",conn.RemoteAddr(),  err)
+			return
+		}
+
 		select {
 		case <-ctx.Done():
 			fmt.Println("[Log] Shutting down client handler...")
@@ -151,6 +166,11 @@ func (s *Server) handleClientConnection(ctx context.Context,
 		default:
 			n, err := conn.Read(b)
 			if err != nil {
+				// checks if err implements the net.Error interface
+				// if it does (ok = true), checks if a Timeout occured
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					continue
+				}
 				if err == io.EOF {
 					fmt.Printf("[Log|%s] Client closed connection.\n", conn.RemoteAddr())
 					return
@@ -173,15 +193,13 @@ func (s *Server) processMessageChannelInput(ctx context.Context, wg *sync.WaitGr
 
 	defer wg.Done()
 
-	// TODO: How to check continually for ctx.Done() signal. Not just when
-	// receiving input?
-	for msg := range s.msgChannel {
+	for {
 
 		select {
 		case <-ctx.Done():
 			fmt.Println("[Log] Shutting down processing of input...")
 			return
-		default:
+		case msg :=<- s.msgChannel:
 			fmt.Printf("[Log] Message received from %s:\n%s\n", msg.sender.RemoteAddr(), string(msg.payload))
 
 			pld := string(msg.payload)
