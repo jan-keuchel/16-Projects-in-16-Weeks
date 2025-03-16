@@ -13,6 +13,12 @@ import (
 	"time"
 )
 
+type CommandHandler func(s *Server, conn net.Conn, payload []byte)
+
+var commands = map[string]CommandHandler {
+	"/quit": handleQuit,
+}
+
 type Message struct {
 	sender  net.Conn
 	payload []byte
@@ -138,6 +144,8 @@ func (s *Server) handleClientConnection(ctx context.Context,
 	 									wg *sync.WaitGroup, 
 	 									conn net.Conn) {
 
+	fmt.Println("[Log] Received new client. Setting up handler...")
+
 	defer func() {
 		s.mu.Lock()
 		delete(s.clientConns, conn)
@@ -149,6 +157,8 @@ func (s *Server) handleClientConnection(ctx context.Context,
 	s.mu.Lock()
 	s.clientConns[conn] = true
 	s.mu.Unlock()
+
+	fmt.Println("[Log] New client is now set up.")
 
 	b := make([]byte, 2048)
 	for {
@@ -204,7 +214,16 @@ func (s *Server) processMessageChannelInput(ctx context.Context, wg *sync.WaitGr
 
 			pld := string(msg.payload)
 			if strings.HasPrefix(pld, "/") {
-				fmt.Printf("[Log] Message from %s is a command: '%s'.", msg.sender.RemoteAddr(), pld)
+				fmt.Printf("[Log] Command from %s: '%s'.\n", msg.sender.RemoteAddr(), pld)
+				command := strings.Fields(pld)[0]
+				handler, ok := commands[command]
+				if !ok {
+					// TODO: Send message to client: invalid command.
+					fmt.Printf("[Log] Command from %s was invalid: %s\n", msg.sender.RemoteAddr(), string(msg.payload))
+					continue
+				}
+
+				handler(s, msg.sender, msg.payload)
 
 			}
 		}
@@ -213,8 +232,12 @@ func (s *Server) processMessageChannelInput(ctx context.Context, wg *sync.WaitGr
 
 }
 
-
 // -----------------------------
 // ---------- Handler ----------
 // -----------------------------
 
+func handleQuit(s *Server, conn net.Conn, payload []byte) {
+
+	fmt.Println("[Log] Handle quit command.")
+
+}
