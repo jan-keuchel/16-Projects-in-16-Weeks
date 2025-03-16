@@ -26,7 +26,8 @@ type Message struct {
 
 type Server struct {
 	listenAddr 	 string
-	clientConns  map[net.Conn] bool
+	clientConns  map[net.Conn]bool
+	qtChs 		 map[net.Conn]chan struct{}
 	msgChannel	 chan Message
 	mu  		 sync.Mutex
 }
@@ -36,6 +37,7 @@ func NewServer(listenAddr string) *Server {
 	return &Server{
 		listenAddr:   listenAddr,
 		clientConns:  make(map[net.Conn]bool),
+		qtChs:  	  make(map[net.Conn]chan struct{}),
 		msgChannel:   make(chan Message),
 	}
 
@@ -149,6 +151,7 @@ func (s *Server) handleClientConnection(ctx context.Context,
 	defer func() {
 		s.mu.Lock()
 		delete(s.clientConns, conn)
+		delete(s.qtChs, conn)
 		s.mu.Unlock()
 		conn.Close()
 		wg.Done()
@@ -156,6 +159,7 @@ func (s *Server) handleClientConnection(ctx context.Context,
 
 	s.mu.Lock()
 	s.clientConns[conn] = true
+	s.qtChs[conn] 		= make(chan struct{})
 	s.mu.Unlock()
 
 	fmt.Println("[Log] New client is now set up.")
@@ -172,6 +176,9 @@ func (s *Server) handleClientConnection(ctx context.Context,
 		select {
 		case <-ctx.Done():
 			fmt.Println("[Log] Shutting down client handler...")
+			return
+		case <-s.qtChs[conn]:
+			fmt.Println("[Log] Received '/quit' command. Shutting down connection.")
 			return
 		default:
 			n, err := conn.Read(b)
@@ -238,6 +245,8 @@ func (s *Server) processMessageChannelInput(ctx context.Context, wg *sync.WaitGr
 
 func handleQuit(s *Server, conn net.Conn, payload []byte) {
 
-	fmt.Println("[Log] Handle quit command.")
+	fmt.Println("[Log] Handling '/quit' command from", conn.RemoteAddr(), "...")
+	close(s.qtChs[conn])
+	fmt.Println("[Log] Connection closed.")
 
 }
