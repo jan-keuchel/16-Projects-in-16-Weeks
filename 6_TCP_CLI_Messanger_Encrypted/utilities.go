@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 	"unicode"
 )
 
@@ -33,6 +34,7 @@ func verifyIPFormat(ip string) bool {
 }
 
 func fileExists(path string) bool {
+
     _, err := os.Stat(path)
     if err == nil {
         return true
@@ -41,4 +43,15 @@ func fileExists(path string) bool {
         return false
     }
     return false
+
+}
+
+func getFileSize(path string) (int, error) {
+
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	return int(fileInfo.Size()), nil
+
 }
