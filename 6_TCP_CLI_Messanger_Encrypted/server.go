@@ -16,7 +16,8 @@ import (
 type CommandHandler func(s *Server, conn net.Conn, payload []byte)
 
 var commands = map[string]CommandHandler {
-	"/quit": handleQuit,
+	"/quit":  		handleQuit,
+	"/register": 	handleRegister,
 }
 
 type Message struct {
@@ -30,6 +31,8 @@ type Server struct {
 	qtChs 		 map[net.Conn]chan struct{}
 	msgChannel	 chan Message
 	mu  		 sync.Mutex
+	usrPwdMap 	 map[string]string
+	shadowNu 	 sync.Mutex
 }
 
 func NewServer(listenAddr string) *Server {
@@ -39,6 +42,7 @@ func NewServer(listenAddr string) *Server {
 		clientConns:  make(map[net.Conn]bool),
 		qtChs:  	  make(map[net.Conn]chan struct{}),
 		msgChannel:   make(chan Message),
+		usrPwdMap: 	  make(map[string]string),
 	}
 
 }
@@ -53,6 +57,11 @@ func (s *Server) Start() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
+	if !s.loadUserPasswordHashes() {
+		fmt.Println("[Error] Loading passwords failed. Aborting...")
+		return
+	}
+
 	wg.Add(2)
 	go s.processMessageChannelInput(ctx, &wg)
 	go s.acceptClientConnections(ctx, &wg)
@@ -66,6 +75,68 @@ func (s *Server) Start() {
 	wg.Wait()
 
 	fmt.Println("[Log] Shutdown complete.")
+
+}
+
+func (s *Server) loadUserPasswordHashes() bool {
+
+	if !fileExists(shadowPath) {
+
+		err := os.MkdirAll(serverDataDir, 0700)
+		if err != nil {
+			fmt.Println("[Error] Creating directory for server data:", err)
+			return false
+		}
+
+		pwdFile, err := os.Create(shadowPath)
+		if err != nil {
+			fmt.Println("[Error] Creating shadow file:", err)
+			return false
+		}
+		pwdFile.Close()
+		fmt.Println("[Log] No shadow file yet. Created it.")
+		return true
+	}
+
+	pwdFile, err := os.Open(shadowPath)
+	if err != nil {
+		fmt.Println("[Error] Opening shadow file:", err)
+		return false
+	}
+	defer pwdFile.Close()
+
+	pwdFileLen, err := getFileSize(shadowPath)
+	if err != nil {
+		fmt.Println("[Error] Gettings length of file:", err)
+		return false
+	}
+
+	var buffer = make([]byte, pwdFileLen)
+	_, err = pwdFile.Read(buffer)
+	if err != nil {
+		fmt.Println("[Error] Reading shadow file:" ,err)
+		return false
+	}
+
+	shadowLines := strings.Split(string(buffer), "\n")
+	for _, line := range shadowLines {
+
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		entry := strings.Split(line, ":")
+		if len(entry) < 2 {
+			fmt.Printf("[Warning] Invalid shadow file entry: %s\n", line)
+			continue
+		}
+		s.usrPwdMap[entry[0]] = entry[1]
+
+	}
+
+	fmt.Println("[Log] Successfully loaded shadow file.")
+	return true
 
 }
 
@@ -225,7 +296,6 @@ func (s *Server) processMessageChannelInput(ctx context.Context, wg *sync.WaitGr
 				command := strings.Fields(pld)[0]
 				handler, ok := commands[command]
 				if !ok {
-					// TODO: Send message to client: invalid command.
 					fmt.Printf("[Log] Command from %s was invalid: %s\n", msg.sender.RemoteAddr(), string(msg.payload))
 					continue
 				}
@@ -245,8 +315,23 @@ func (s *Server) processMessageChannelInput(ctx context.Context, wg *sync.WaitGr
 
 func handleQuit(s *Server, conn net.Conn, payload []byte) {
 
-	fmt.Println("[Log] Handling '/quit' command from", conn.RemoteAddr(), "...")
+	fmt.Printf("Handling '/quit' command from %s...\n", conn.RemoteAddr())
+
 	close(s.qtChs[conn])
-	fmt.Println("[Log] Connection closed.")
+
+}
+
+func handleRegister(s *Server, conn net.Conn, payload []byte) {
+
+	fmt.Printf("Handling '/register' command from %s...\n", conn.RemoteAddr())
+
+	slicedPld := strings.Fields(string(payload))
+	username  := slicedPld[1]
+	pwdHsh 	  := slicedPld[2]
+
+	fmt.Printf("[Debugging] Received username: %s, password hash: %s\n", username, pwdHsh)
+
+	// TODO: user already exists?
+	// TODO: Write new user to file
 
 }
