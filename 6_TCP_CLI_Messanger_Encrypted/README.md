@@ -12,9 +12,10 @@ It is also important to have properly managed client connections and close them 
     - [ ] The connections can be closed by the client ('/quit') or by the server (3 wrong login attempts)
 - [ ] Commands
     - [x] '/quit' - logs out the client and closes the connection
-    - [ ] '/login' - initiates the login process
-        - [ ] Query for username (locally)
-        - [ ] Query for passowrd (locally)
+    - [x] '/login' - initiates the login process
+        - [x] Query for username (locally)
+        - [x] Query for passowrd (locally)
+    - [ ] '/logout' - logs out the user
     - [ ] '/register' - initiates the sign up process
         - [x] Query for username (locally) - No duplicate usernames
         - [x] query for passowrd (locally)
