@@ -32,7 +32,7 @@ type Server struct {
 	msgChannel	 chan Message
 	mu  		 sync.Mutex
 	usrPwdMap 	 map[string]string
-	shadowNu 	 sync.Mutex
+	muShadow 	 sync.Mutex
 }
 
 func NewServer(listenAddr string) *Server {
@@ -73,6 +73,8 @@ func (s *Server) Start() {
 	}
 
 	wg.Wait()
+
+	s.saveUserPasswordHashes()
 
 	fmt.Println("[Log] Shutdown complete.")
 
@@ -136,6 +138,48 @@ func (s *Server) loadUserPasswordHashes() bool {
 	}
 
 	fmt.Println("[Log] Successfully loaded shadow file.")
+	return true
+
+}
+
+func (s *Server) saveUserPasswordHashes() bool {
+
+	fmt.Println("[Log] Writing user-passwordHash pairs to temporary shadow file...")
+
+	tempShadowFile, err := os.Create(tempShadowPath)
+	if err != nil {
+		fmt.Println("[Error] Creating tempShadowFile, aborting...:", err)
+		return false
+	}
+	defer tempShadowFile.Close()
+
+	// NOTE: Mutex muShadow not needed, because other threads have been canceled before.
+	for user, pwdHsh := range s.usrPwdMap {
+
+		line := user + ":" + pwdHsh + "\n"
+
+		n, err := tempShadowFile.WriteString(line)
+		if err != nil {
+			fmt.Printf("[Error] Writing user-passwordHash pair of '%s' to temporary shadow file:\n%s\n", user, err)
+			return false
+		}
+		if n != len(line) {
+			fmt.Println("[Error] Couldn't write entire line into temporary shadow file.")
+			return false
+		}
+
+	}
+
+	fmt.Println("[Log] Moving temporary shadow file to permanent shadow file...")
+
+	err = os.Rename(tempShadowPath, shadowPath)
+	if err != nil {
+		fmt.Println("[Error] Moving temporary shadow file to permanent shadow file.")
+		return false
+	}
+
+	fmt.Println("[Log] Successfully saved user-passwordHash pairs.")
+
 	return true
 
 }
@@ -331,7 +375,24 @@ func handleRegister(s *Server, conn net.Conn, payload []byte) {
 
 	fmt.Printf("[Debugging] Received username: %s, password hash: %s\n", username, pwdHsh)
 
-	// TODO: user already exists?
-	// TODO: Write new user to file
+	s.muShadow.Lock()
+	_, exists := s.usrPwdMap[username]
+	if exists {
+		fmt.Println("[Log] '/register' failed because of duplicate username.")
+		conn.Write([]byte("[Error] Username already exists. Please retry with different username."))
+		s.muShadow.Unlock()
+		return
+	}
+	s.usrPwdMap[username] = pwdHsh
+	s.muShadow.Unlock()
+
+	fmt.Println("[Log] Successfully added new user to usrPwdMap.")
+
+	_, err := conn.Write([]byte("A new user has been added: " + username))
+	if err != nil {
+		fmt.Printf("[Error|%s] Writing 'new user added' message.\n", conn.RemoteAddr())
+		return
+	}
+
 
 }
