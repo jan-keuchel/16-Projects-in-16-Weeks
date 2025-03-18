@@ -177,8 +177,6 @@ func preprocessRegister(c *Client, payload string) (string, error) {
 	}
 	pwdHsh := hash.Sum(nil)
 
-	fmt.Printf("register: %s --> %s\n", pwd, pwdHsh)
-
 	res := command + " " + username + " " + string(pwdHsh)
 
 	return res, nil
@@ -211,8 +209,6 @@ func preprocessLogin(c *Client, payload string) (string, error) {
 		return "", err
 	}
 	pwdHsh := hash.Sum(nil)
-
-	fmt.Printf("login: %s --> %s\n", pwd, pwdHsh)
 
 	res := command + " " + username + " " + string(pwdHsh)
 

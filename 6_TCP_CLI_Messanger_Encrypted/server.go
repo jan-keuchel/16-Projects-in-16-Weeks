@@ -365,6 +365,53 @@ func (s *Server) processMessageChannelInput(ctx context.Context, wg *sync.WaitGr
 
 }
 
+func (s *Server) sendMessageToClient(conn net.Conn, msg string, errMsg string) {
+
+	username := "anonymous"
+
+	s.mu.Lock()
+	_, exists := s.clientConnsRev[s.clientConns[conn]]
+	fmt.Println("[Debugging] Current map:", s.clientConns)
+	fmt.Println("[Debugging] Current reverse map:", s.clientConnsRev)
+	fmt.Println("[Debugging] s.clientConns[conn] = ", s.clientConns[conn])
+	fmt.Println("[Debugging] s.clientConnsRev[s.clientConns[conn]] = ", s.clientConnsRev[s.clientConns[conn]])
+	if exists {
+		fmt.Println("[Debugging] user is loggin in. Personalizing message...")
+		username = s.clientConns[conn]
+	}
+	s.mu.Unlock()
+
+	personalizedMsg := "(" + username + ") " + msg
+
+	_, err := conn.Write([]byte(personalizedMsg))
+	if err != nil {
+		fmt.Println(errMsg + ":", err)
+		return
+	}
+	return
+
+}
+
+func (s *Server) sendMessageToClientLocked(conn net.Conn, msg string, errMsg string) {
+
+	username := "anonymous"
+
+	_, exists := s.clientConnsRev[s.clientConns[conn]]
+	if exists {
+		username = s.clientConns[conn]
+	}
+
+	personalizedMsg := "(" + username + ") " + msg
+
+	_, err := conn.Write([]byte(personalizedMsg))
+	if err != nil {
+		fmt.Println(errMsg + ":", err)
+		return
+	}
+	return
+
+}
+
 // -----------------------------
 // ---------- Handler ----------
 // -----------------------------
@@ -391,7 +438,7 @@ func handleRegister(s *Server, conn net.Conn, payload []byte) {
 	_, exists := s.usrPwdMap[username]
 	if exists || username == "anonymous" {
 		fmt.Println("[Log] '/register' failed because of duplicate username.")
-		conn.Write([]byte("[Error] Username already exists. Please retry with different username."))
+		s.sendMessageToClientLocked(conn, "[Error] Username already exists. Please retry with different username.", "")
 		s.muShadow.Unlock()
 		return
 	}
@@ -400,12 +447,9 @@ func handleRegister(s *Server, conn net.Conn, payload []byte) {
 
 	fmt.Println("[Log] Successfully added new user to usrPwdMap.")
 
-	_, err := conn.Write([]byte("A new user has been added: " + username))
-	if err != nil {
-		fmt.Printf("[Error|%s] Writing 'new user added' message.\n", conn.RemoteAddr())
-		return
-	}
-
+	msg    := "A new user has been added: " + username
+	errMsg := "[Error|" + conn.RemoteAddr().String() + "] Writing 'new user added' message."
+	s.sendMessageToClient(conn, msg, errMsg)
 
 }
 
@@ -419,38 +463,22 @@ func handleHelp(s *Server, conn net.Conn, payload []byte) {
 		_, err := builder.Write([]byte(line + "\n"))
 		if err != nil {
 			fmt.Println("[Error] Concatenation of command description failed:", err)
-			_, err := conn.Write([]byte("[Error] Something went wrong at the server. Please try again..."))
-			if err != nil {
-				fmt.Println("[Error] Writing 'failed concatenation' message to the client:", err)
-			}
+
+			msg := "[Error] Something went wrong at the server. Please try again..."
+			errMsg := "[Error] Writing 'failed concatenation' message to the client:"
+			s.sendMessageToClient(conn, msg, errMsg)
+
 			return
 		}
 	}
 
-	_, err := conn.Write([]byte(builder.String()))
-	if err != nil {
-		fmt.Printf("[Error] Writing list of command descriptions to %s: %s", conn.RemoteAddr(), err)
-		return
-	}
+	msg    := builder.String()
+	errMsg := "[Error] Writing list of command descriptions to " + conn.RemoteAddr().String()
+	s.sendMessageToClient(conn, msg, errMsg)
 
 }
 
 func handleLogin(s *Server, conn net.Conn, payload []byte) {
-
-	// net.Conn <--> username lookup idea (reverse lookup map):
-	// 		map[net.Conn]username
-	//		map[username]net.Conn
-	// Connection get's established  -> entry in s.clientConns: conn -> "anonymous"
-	// Client logs in as user "usr1" -> update conn -> "usr1", new entry in reverseLookup: "usr1" -> conn
-
-	// TODO: Check if given username is present in usrPwdMap
-	// 		No:  Send 'no such combination of username and password.'
-	// 		Yes: Log in the user.
-
-	// TODO: Check for duplicate logins for the same user
-	// 		Is requested user in reverseLookup map?
-	// 			Yes: It's a duplicate login attempt
-	// 			No:  It's a valid login
 
 	fmt.Printf("Handling '/login' command from %s...\n", conn.RemoteAddr())
 
@@ -464,12 +492,10 @@ func handleLogin(s *Server, conn net.Conn, payload []byte) {
 	_, userLoggedIn := s.clientConnsRev[inputUsername]
 	if userLoggedIn {
 		fmt.Printf("[Log] '/login'failed because user '%s' was already logged in.\n", inputUsername)
-		_, err := conn.Write([]byte("[Error] Login failed because user is already logged in."))
-		if err != nil {
-			fmt.Printf("[Error] Failed writing 'duplicate login' message to %s: %s\n", conn.RemoteAddr(), err)
-			s.mu.Unlock()
-			return
-		}
+		msg    := "[Error] Login failed because user is already logged in."
+		errMsg := "[Error] Failed writing 'duplicate login' message to " + conn.LocalAddr().String()
+		s.sendMessageToClientLocked(conn, msg, errMsg)
+
 		s.mu.Unlock()
 		return
 	}
@@ -479,7 +505,10 @@ func handleLogin(s *Server, conn net.Conn, payload []byte) {
 	pwdHsh, userExists := s.usrPwdMap[inputUsername]
 	if !userExists {
 		fmt.Println("[Log] '/login' failed because invalid username was given.")
-		conn.Write([]byte("[Error] Invalid combiation of username and password given."))
+		msg    := "[Error] Invalid combiation of username and password given."
+		errMsg := "[Error] Failed writin 'invalid username' message to " + conn.LocalAddr().String()
+		s.sendMessageToClientLocked(conn, msg, errMsg)	
+
 		s.muShadow.Unlock()
 		return
 	}
@@ -488,21 +517,22 @@ func handleLogin(s *Server, conn net.Conn, payload []byte) {
 
 	if pwdHsh != inputPwdHsh {
 		fmt.Println("[Log] '/login' failed because invalid password hash was given.")
-		conn.Write([]byte("[Error] Invalid combiation of username and password given."))
+		msg    := "[Error] Invalid combiation of username and password given."
+		errMsg := "[Error] Writin 'wrong password' message to " + conn.RemoteAddr().String()
+		s.sendMessageToClient(conn, msg, errMsg)
+
 		s.muShadow.Unlock()
 		return
 	}
 	s.muShadow.Unlock()
 
 	s.mu.Lock()
+	s.clientConns[conn] = inputUsername
 	s.clientConnsRev[inputUsername] = conn
 	s.mu.Unlock()
 
-	_, err := conn.Write([]byte("Login successfull. Your are now logged in as '" + inputUsername + "'"))
-	if err != nil {
-		fmt.Printf("[Error] Failed writing 'successfull login' message to %s: %s", conn.RemoteAddr(), err)
-		return
-	}
-
+	msg    := "Login successfull." 
+	errMsg := "[Error] Failed writing 'successfull login' message to " + conn.RemoteAddr().String()
+	s.sendMessageToClient(conn, msg, errMsg)
 
 }
