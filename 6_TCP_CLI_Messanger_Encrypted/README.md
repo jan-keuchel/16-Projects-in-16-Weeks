@@ -8,16 +8,16 @@ It is also important to have properly managed client connections and close them 
 
 ## Features
 - [ ] Managing connections
-    - [ ] The server listens for new connections indefinetely
+    - [x] The server listens for new connections indefinetely
     - [ ] The connections can be closed by the client ('/quit') or by the server (3 wrong login attempts)
 - [ ] Commands
-    - [ ] '/quit' - logs out the client and closes the connection
+    - [x] '/quit' - logs out the client and closes the connection
     - [ ] '/login' - initiates the login process
         - [ ] Query for username (locally)
         - [ ] Query for passowrd (locally)
     - [ ] '/register' - initiates the sign up process
-        - [ ] Query for username (locally) - No duplicate usernames
-        - [ ] query for passowrd (locally)
+        - [x] Query for username (locally) - No duplicate usernames
+        - [x] query for passowrd (locally)
         - [ ] Generate public-private key-pair
     - [ ] '/newChat \<username\>' - Sends a chat request to the user specified
         - [ ] The new chat will be assigned an ID
@@ -29,7 +29,7 @@ It is also important to have properly managed client connections and close them 
         - [ ] It's possible to write messages to a client who is offline
     - [ ] '/exit' - exits chat mode and returns to overview
     - [ ] '/deleteChat \<id\>' - deletes a chat 
-    - [ ] '/help' - prints a list of commands along with their descriptions
+    - [x] '/help' - prints a list of commands along with their descriptions
 - [ ] User Experience
     - [ ] Proper walk through of how to establish the connection
 
