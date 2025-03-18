@@ -2,14 +2,13 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"strings"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
 type CommandPreprocesser func(c *Client, payload string) (string, error)
@@ -18,6 +17,7 @@ var commandRequirementFunctions = map[string]CommandPreprocesser {
 	"/quit": 		preprocessQuit,
 	"/register": 	preprocessRegister,
 	"/help": 		preprocessHelp,
+	"/login": 		preprocessLogin,
 }
 
 type Client struct {
@@ -170,14 +170,14 @@ func preprocessRegister(c *Client, payload string) (string, error) {
 	username  := slicedPld[1]
 	pwd   	  := []byte(slicedPld[2])
 
-	if len(pwd) > 72 {
-		return "", errors.New("The password given to '/register' was too long. The maximal length is 72 bytes.")
-	}
-
-	pwdHsh, err := bcrypt.GenerateFromPassword(pwd, bcrypt.DefaultCost)
+	hash := sha256.New()
+	_, err := hash.Write(pwd)
 	if err != nil {
-		return "", errors.New("'/register' failed to hash the provided password.")
+		return "", err
 	}
+	pwdHsh := hash.Sum(nil)
+
+	fmt.Printf("register: %s --> %s\n", pwd, pwdHsh)
 
 	res := command + " " + username + " " + string(pwdHsh)
 
@@ -193,3 +193,30 @@ func preprocessHelp(c *Client, payload string) (string, error) {
 	return "/help", nil
 
 }
+
+func preprocessLogin(c *Client, payload string) (string, error) {
+
+	if len(strings.Fields(string(payload))) != 3 {
+		return "", errors.New("'/login' command was given the wrong number of arguments. Please provide username and password according to the following pattern: '/login <username> <password>'.")
+	}
+
+	slicedPld := strings.Fields(payload)
+	command   := slicedPld[0]
+	username  := slicedPld[1]
+	pwd   	  := []byte(slicedPld[2])
+
+	hash := sha256.New()
+	_, err := hash.Write(pwd)
+	if err != nil {
+		return "", err
+	}
+	pwdHsh := hash.Sum(nil)
+
+	fmt.Printf("login: %s --> %s\n", pwd, pwdHsh)
+
+	res := command + " " + username + " " + string(pwdHsh)
+
+	return res, nil
+
+}
+

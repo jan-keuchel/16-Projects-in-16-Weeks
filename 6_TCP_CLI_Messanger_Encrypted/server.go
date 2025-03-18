@@ -19,12 +19,14 @@ var commands = map[string]CommandHandler {
 	"/quit":  		handleQuit,
 	"/register": 	handleRegister,
 	"/help":  		handleHelp,
+	"/login": 		handleLogin,
 }
 
 var commandDescriptions = [...]string {
+	"- '/help': Lists all the available commands with a description.",
 	"- '/quit': Signals the server to close the connection.",
 	"- '/register <username> <password>': Sends username and locally hashed password to the server to set up a new user. If the given username is already in use an error will be returned.",
-	"- '/help': Lists all the available commands with a description.",
+	"- '/login <username> <password>': Sends username and locally hashed password to the server to verify the combination of both. If valid you will be logged in. At 3 wrong login attempts this connection will be closed by the server.",
 }
 
 type Message struct {
@@ -33,23 +35,25 @@ type Message struct {
 }
 
 type Server struct {
-	listenAddr 	 string
-	clientConns  map[net.Conn]bool
-	qtChs 		 map[net.Conn]chan struct{}
-	msgChannel	 chan Message
-	mu  		 sync.Mutex
-	usrPwdMap 	 map[string]string
-	muShadow 	 sync.Mutex
+	listenAddr 	   	string
+	clientConns    	map[net.Conn]string
+	clientConnsRev	map[string]net.Conn
+	qtChs 		   	map[net.Conn]chan struct{}
+	msgChannel	   	chan Message
+	mu  		   	sync.Mutex
+	usrPwdMap 	   	map[string]string
+	muShadow 	   	sync.Mutex
 }
 
 func NewServer(listenAddr string) *Server {
 
 	return &Server{
-		listenAddr:   listenAddr,
-		clientConns:  make(map[net.Conn]bool),
-		qtChs:  	  make(map[net.Conn]chan struct{}),
-		msgChannel:   make(chan Message),
-		usrPwdMap: 	  make(map[string]string),
+		listenAddr:   	listenAddr,
+		clientConns:  	make(map[net.Conn]string),
+		clientConnsRev:	make(map[string]net.Conn),
+		qtChs:  	  	make(map[net.Conn]chan struct{}),
+		msgChannel:   	make(chan Message),
+		usrPwdMap: 	  	make(map[string]string),
 	}
 
 }
@@ -272,6 +276,7 @@ func (s *Server) handleClientConnection(ctx context.Context,
 
 	defer func() {
 		s.mu.Lock()
+		delete(s.clientConnsRev, s.clientConns[conn])
 		delete(s.clientConns, conn)
 		delete(s.qtChs, conn)
 		s.mu.Unlock()
@@ -280,7 +285,7 @@ func (s *Server) handleClientConnection(ctx context.Context,
 	}()
 
 	s.mu.Lock()
-	s.clientConns[conn] = true
+	s.clientConns[conn] = "anonymous"
 	s.qtChs[conn] 		= make(chan struct{})
 	s.mu.Unlock()
 
@@ -384,7 +389,7 @@ func handleRegister(s *Server, conn net.Conn, payload []byte) {
 
 	s.muShadow.Lock()
 	_, exists := s.usrPwdMap[username]
-	if exists {
+	if exists || username == "anonymous" {
 		fmt.Println("[Log] '/register' failed because of duplicate username.")
 		conn.Write([]byte("[Error] Username already exists. Please retry with different username."))
 		s.muShadow.Unlock()
@@ -427,5 +432,77 @@ func handleHelp(s *Server, conn net.Conn, payload []byte) {
 		fmt.Printf("[Error] Writing list of command descriptions to %s: %s", conn.RemoteAddr(), err)
 		return
 	}
+
+}
+
+func handleLogin(s *Server, conn net.Conn, payload []byte) {
+
+	// net.Conn <--> username lookup idea (reverse lookup map):
+	// 		map[net.Conn]username
+	//		map[username]net.Conn
+	// Connection get's established  -> entry in s.clientConns: conn -> "anonymous"
+	// Client logs in as user "usr1" -> update conn -> "usr1", new entry in reverseLookup: "usr1" -> conn
+
+	// TODO: Check if given username is present in usrPwdMap
+	// 		No:  Send 'no such combination of username and password.'
+	// 		Yes: Log in the user.
+
+	// TODO: Check for duplicate logins for the same user
+	// 		Is requested user in reverseLookup map?
+	// 			Yes: It's a duplicate login attempt
+	// 			No:  It's a valid login
+
+	fmt.Printf("Handling '/login' command from %s...\n", conn.RemoteAddr())
+
+	slicedPld  	  := strings.Fields(string(payload))
+	inputUsername := slicedPld[1]
+	inputPwdHsh   := slicedPld[2]
+
+	fmt.Printf("[Debugging] Received username: %s, password hash: %s as a login combination.\n", inputUsername, inputPwdHsh)
+
+	s.mu.Lock()
+	_, userLoggedIn := s.clientConnsRev[inputUsername]
+	if userLoggedIn {
+		fmt.Printf("[Log] '/login'failed because user '%s' was already logged in.\n", inputUsername)
+		_, err := conn.Write([]byte("[Error] Login failed because user is already logged in."))
+		if err != nil {
+			fmt.Printf("[Error] Failed writing 'duplicate login' message to %s: %s\n", conn.RemoteAddr(), err)
+			s.mu.Unlock()
+			return
+		}
+		s.mu.Unlock()
+		return
+	}
+	s.mu.Unlock()
+
+	s.muShadow.Lock()
+	pwdHsh, userExists := s.usrPwdMap[inputUsername]
+	if !userExists {
+		fmt.Println("[Log] '/login' failed because invalid username was given.")
+		conn.Write([]byte("[Error] Invalid combiation of username and password given."))
+		s.muShadow.Unlock()
+		return
+	}
+
+	fmt.Printf("[Debugging] shadowfileHash: %s\ninputHash: %s\n", pwdHsh, inputPwdHsh)
+
+	if pwdHsh != inputPwdHsh {
+		fmt.Println("[Log] '/login' failed because invalid password hash was given.")
+		conn.Write([]byte("[Error] Invalid combiation of username and password given."))
+		s.muShadow.Unlock()
+		return
+	}
+	s.muShadow.Unlock()
+
+	s.mu.Lock()
+	s.clientConnsRev[inputUsername] = conn
+	s.mu.Unlock()
+
+	_, err := conn.Write([]byte("Login successfull. Your are now logged in as '" + inputUsername + "'"))
+	if err != nil {
+		fmt.Printf("[Error] Failed writing 'successfull login' message to %s: %s", conn.RemoteAddr(), err)
+		return
+	}
+
 
 }
