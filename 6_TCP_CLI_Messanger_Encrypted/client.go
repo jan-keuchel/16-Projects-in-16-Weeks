@@ -17,6 +17,7 @@ type CommandPreprocesser func(c *Client, payload string) (string, error)
 var commandRequirementFunctions = map[string]CommandPreprocesser {
 	"/quit": 		preprocessQuit,
 	"/register": 	preprocessRegister,
+	"/help": 		preprocessHelp,
 }
 
 type Client struct {
@@ -181,5 +182,14 @@ func preprocessRegister(c *Client, payload string) (string, error) {
 	res := command + " " + username + " " + string(pwdHsh)
 
 	return res, nil
+
+}
+
+func preprocessHelp(c *Client, payload string) (string, error) {
+
+	if len(strings.Fields(payload)) != 1 {
+		return "", errors.New("'/help' command was given the wrong number of arguments. Plese just ust '/help' without any further arguments in order to show a list of available commands and their usecases.")
+	}
+	return "/help", nil
 
 }

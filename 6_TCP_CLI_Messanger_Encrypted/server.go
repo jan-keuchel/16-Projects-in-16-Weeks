@@ -18,6 +18,13 @@ type CommandHandler func(s *Server, conn net.Conn, payload []byte)
 var commands = map[string]CommandHandler {
 	"/quit":  		handleQuit,
 	"/register": 	handleRegister,
+	"/help":  		handleHelp,
+}
+
+var commandDescriptions = [...]string {
+	"- '/quit': Signals the server to close the connection.",
+	"- '/register <username> <password>': Sends username and locally hashed password to the server to set up a new user. If the given username is already in use an error will be returned.",
+	"- '/help': Lists all the available commands with a description.",
 }
 
 type Message struct {
@@ -394,5 +401,31 @@ func handleRegister(s *Server, conn net.Conn, payload []byte) {
 		return
 	}
 
+
+}
+
+func handleHelp(s *Server, conn net.Conn, payload []byte) {
+
+	fmt.Printf("Handling '/help' command from %s...\n", conn.RemoteAddr())
+
+	var builder strings.Builder
+	builder.Write([]byte("The following is a list of all available commands and their usecase:\n"))
+	for _, line := range commandDescriptions {
+		_, err := builder.Write([]byte(line + "\n"))
+		if err != nil {
+			fmt.Println("[Error] Concatenation of command description failed:", err)
+			_, err := conn.Write([]byte("[Error] Something went wrong at the server. Please try again..."))
+			if err != nil {
+				fmt.Println("[Error] Writing 'failed concatenation' message to the client:", err)
+			}
+			return
+		}
+	}
+
+	_, err := conn.Write([]byte(builder.String()))
+	if err != nil {
+		fmt.Printf("[Error] Writing list of command descriptions to %s: %s", conn.RemoteAddr(), err)
+		return
+	}
 
 }
