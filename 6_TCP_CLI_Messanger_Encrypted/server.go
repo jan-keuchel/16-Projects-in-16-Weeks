@@ -58,6 +58,11 @@ func NewServer(listenAddr string) *Server {
 
 }
 
+// Start starts up the server by spawning 2 goroutines in order
+// to listen for incomming connections and process the input of the
+// clients.
+// It then blocks to receive a shutdown signal upon which
+// the 2 goroutines will shut down and finally the programm will terminate.
 func (s *Server) Start() {
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -91,6 +96,11 @@ func (s *Server) Start() {
 
 }
 
+// loadUserPasswordHashes reads from the shadow file which stores the
+// username-hash pairs for login verification and loads those values
+// into the servers usrPwdMap.
+// If there is no shadow file yet, it will be created.
+// Returns true on successfull loading and false otherwise
 func (s *Server) loadUserPasswordHashes() bool {
 
 	if !fileExists(shadowPath) {
@@ -153,6 +163,10 @@ func (s *Server) loadUserPasswordHashes() bool {
 
 }
 
+// saveUserPasswordHashes writes all the entries from the servers
+// usrPwdMap into a temporary shadow file. After that it overwrites
+// the original shadow file.
+// Returns true on success and false otherwise.
 func (s *Server) saveUserPasswordHashes() bool {
 
 	fmt.Println("[Log] Writing user-passwordHash pairs to temporary shadow file...")
@@ -195,20 +209,21 @@ func (s *Server) saveUserPasswordHashes() bool {
 
 }
 
-// acceptClientConnections starts a listener on the servers specified address and
-// accepts incomming client connections. The accepted client connection is then
-// handled by handleClientConnection in a separate goroutine.
+// acceptClientConnections starts a listener on the servers listenAddr.
+// It then waits for new incomming connections and spawns a new goroutine
+// per connection. If a cancellation signal is received via ctx, it waits 
+// for all the summoned goroutines to terminate and then returns.
 //
-// The following operations are performed:
-// 	 - Starting up the listener
-// 	 - Waiting for and accepting incomming connections
-// 	 - Starting a new goroutine per incomming connection
+// Parameters:
+// 	ctx - Context for cancellation of function
+// 	mainWG - Waitgroup for syncing
 func (s *Server) acceptClientConnections(ctx context.Context, mainWG *sync.WaitGroup) {
 
 	defer mainWG.Done()
 
 	var wg sync.WaitGroup
 
+	// Start listener
 	fmt.Println("[Log] Setting up listener...")
 	ln, err := net.Listen("tcp", s.listenAddr)
 	if err != nil {
@@ -217,6 +232,7 @@ func (s *Server) acceptClientConnections(ctx context.Context, mainWG *sync.WaitG
 	}
 	defer ln.Close()
 
+	// Wait for incomming connections
 	fmt.Println("[Log] Now listening for incomming client connections...")
 	for {
 
@@ -242,6 +258,7 @@ func (s *Server) acceptClientConnections(ctx context.Context, mainWG *sync.WaitG
 				continue
 			}
 
+			// Spawn client handler
 			wg.Add(1)
 			go s.handleClientConnection(ctx, &wg, conn)
 
@@ -250,24 +267,16 @@ func (s *Server) acceptClientConnections(ctx context.Context, mainWG *sync.WaitG
 
 }
 
-// handleClientConnection manages a single client connection for the server.
-// It handles reading messages from the client, forwarding them to the server's
-// message channel, and properly cleaning up resources when the connection is closed.
-//
-// The function runs in its own goroutine for each client connection and performs
-// the following key operations:
-//   - Registers the client connection with the server
-//   - Creates a quit channel for proper shutdown
-//   - Reads incoming messages into a 2048-byte buffer
-//   - Forwards messages to the server's message channel
-//   - Handles connection errors and EOF conditions
-//   - Ensures proper cleanup through defer statements
+// handleClientConnection sets up the client by adding the relevant
+// information to the servers members. It then starts listeneing for
+// any incomming data from the client. That data is then forwarded
+// into the msgChannel to which the processMessageChannelInput
+// function is listening.
 //
 // Parameters:
-//   conn - The net.Conn representing the client connection
-//
-// All connection state changes are protected by the server's mutex to ensure
-// thread safety. Connection closure is logged with the client's remote address.
+// 	ctx - Context for cancellation of function
+// 	mainWG - Waitgroup for syncing
+// 	conn - the connection to manage
 func (s *Server) handleClientConnection(ctx context.Context, 
 	 									wg *sync.WaitGroup, 
 	 									conn net.Conn) {
@@ -333,6 +342,13 @@ func (s *Server) handleClientConnection(ctx context.Context,
 
 }
 
+// processMessageChannelInput listens to a channel into which every clients
+// handler sends the received messages. It then prints out the content and calls
+// the handler functions for the different commands.
+//
+// Parameters:
+// 	ctx - Context for cancellation of function
+// 	mainWG - Waitgroup for syncing
 func (s *Server) processMessageChannelInput(ctx context.Context, wg *sync.WaitGroup) {
 
 	defer wg.Done()
@@ -365,6 +381,15 @@ func (s *Server) processMessageChannelInput(ctx context.Context, wg *sync.WaitGr
 
 }
 
+// sendMessageToClient sends the given message to the given client.
+// It adds a prefix to the message to show the client as which user he is logged
+// in as. In case of an error the given error message will be printed for context.
+// To avoid race conditions the map of connections is blocked during the writing process.
+//
+// Parameters:
+//	conn - the clients connection to send the message to
+// 	msg - the message to send
+//	errMsg - the error message to print for context
 func (s *Server) sendMessageToClient(conn net.Conn, msg string, errMsg string) {
 
 	username := "anonymous"
@@ -392,6 +417,16 @@ func (s *Server) sendMessageToClient(conn net.Conn, msg string, errMsg string) {
 
 }
 
+// sendMessageToClientLocked sends the given message to the given client.
+// It adds a prefix to the message to show the client as which user he is logged
+// in as. In case of an error the given error message will be printed for context.
+// The function assumes that the s.mu Mutex is locked. It can therefore be used
+// in the context of a already locked Mutex.
+//
+// Parameters:
+//	conn - the clients connection to send the message to
+// 	msg - the message to send
+//	errMsg - the error message to print for context
 func (s *Server) sendMessageToClientLocked(conn net.Conn, msg string, errMsg string) {
 
 	username := "anonymous"
@@ -416,6 +451,12 @@ func (s *Server) sendMessageToClientLocked(conn net.Conn, msg string, errMsg str
 // ---------- Handler ----------
 // -----------------------------
 
+// handleQuit closes the channel of the given connection to terminate a connection.
+//
+// Parameters
+// 	s - the server
+// 	conn - the connection which will be closed
+//	payload - the arguments of the command. Not used with this command.
 func handleQuit(s *Server, conn net.Conn, payload []byte) {
 
 	fmt.Printf("Handling '/quit' command from %s...\n", conn.RemoteAddr())
@@ -424,6 +465,13 @@ func handleQuit(s *Server, conn net.Conn, payload []byte) {
 
 }
 
+// handleRegister checks if a given username is already registered
+// at the server. If it is not, a new user will be added to the server.
+//
+// Parameters:
+// 	s - the server
+// 	conn - the clients connection
+// 	payload - the arguments of the command. In this case: <command> <username> <password-hash>
 func handleRegister(s *Server, conn net.Conn, payload []byte) {
 
 	fmt.Printf("Handling '/register' command from %s...\n", conn.RemoteAddr())
@@ -453,6 +501,12 @@ func handleRegister(s *Server, conn net.Conn, payload []byte) {
 
 }
 
+// handleHelp sends a list of all possible commands to the given user.
+// 
+// Parameters:
+// 	s - the server
+// 	conn - the clients connection
+// 	payload - the arguments of the command. Not used with this command.
 func handleHelp(s *Server, conn net.Conn, payload []byte) {
 
 	fmt.Printf("Handling '/help' command from %s...\n", conn.RemoteAddr())
@@ -478,6 +532,16 @@ func handleHelp(s *Server, conn net.Conn, payload []byte) {
 
 }
 
+// handleLogin maps a connection onto a user, thery logging him in.
+// The function checks if the user with the given username is already logged
+// in to avoid duplicate log ins. Invalid usernames and passwords are
+// also checked. If valid credentials are provided and the user isn't already
+// logged in, the servers maps are updated, to map the connection onto the user.
+//
+// Parameters:
+// 	s - the server
+// 	conn - the clients connection
+// 	payload - the arguments of the command. In this case: <command> <username> <password-hash>
 func handleLogin(s *Server, conn net.Conn, payload []byte) {
 
 	fmt.Printf("Handling '/login' command from %s...\n", conn.RemoteAddr())
@@ -488,6 +552,7 @@ func handleLogin(s *Server, conn net.Conn, payload []byte) {
 
 	fmt.Printf("[Debugging] Received username: %s, password hash: %s as a login combination.\n", inputUsername, inputPwdHsh)
 
+	// Handle duplicate login
 	s.mu.Lock()
 	_, userLoggedIn := s.clientConnsRev[inputUsername]
 	if userLoggedIn {
@@ -502,6 +567,7 @@ func handleLogin(s *Server, conn net.Conn, payload []byte) {
 	s.mu.Unlock()
 
 	s.muShadow.Lock()
+	// Handle invalid username
 	pwdHsh, userExists := s.usrPwdMap[inputUsername]
 	if !userExists {
 		fmt.Println("[Log] '/login' failed because invalid username was given.")
@@ -515,6 +581,7 @@ func handleLogin(s *Server, conn net.Conn, payload []byte) {
 
 	fmt.Printf("[Debugging] shadowfileHash: %s\ninputHash: %s\n", pwdHsh, inputPwdHsh)
 
+	// Handle wrong password
 	if pwdHsh != inputPwdHsh {
 		fmt.Println("[Log] '/login' failed because invalid password hash was given.")
 		msg    := "[Error] Invalid combiation of username and password given."
