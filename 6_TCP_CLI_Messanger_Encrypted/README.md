@@ -1,10 +1,10 @@
 # TCP CLI Messanger Encrypted
 
 ## Goal
-The goal is to have a CLI application in which someone can log into his account using username and password. Then he can retrieve chats with differend clients and write to those clients. It is also possible to create group chats.
-The important part is that the server which stores the data of the chats should never see the actual messages. Meaning, all the data being sent should be encrypted locally at the client, then sent to the server and from there sent to the recipients who should then decrypt the message again.
-The login an passwords will be stored similar to the '/etc/shadow' file in linux. 
-It is also important to have properly managed client connections and close them properly (improve on mistakes from last project.)
+The goal of this project is to create a messanger application which is based in the terminal.
+Using this application it is possible to connect to the server, register new users and log in as a user. From there on one can create new chats with other users aswell as group-chats. The goal is for the server not to know, what its clients are writing about. Meaning, every message will be encrypted at the clients machine, then sent to the server, which will forward the message to the respective client, where the message will be decrypted again.
+At first the login will happen via username-password pairs. Later on that will maybe change to a public-private-key based authentification.
+As an improvement on the last project, another goal is to close conections properly and not just shut them down. 
 
 ## Features
 - [ ] Managing connections
