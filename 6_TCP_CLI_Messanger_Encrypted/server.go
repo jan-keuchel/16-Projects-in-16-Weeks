@@ -534,11 +534,12 @@ func handleHelp(s *Server, conn net.Conn, payload []byte) {
 
 }
 
-// handleLogin maps a connection onto a user, thery logging him in.
-// The function checks if the user with the given username is already logged
-// in to avoid duplicate log ins. Invalid usernames and passwords are
-// also checked. If valid credentials are provided and the user isn't already
-// logged in, the servers maps are updated, to map the connection onto the user.
+// handleLogin maps a connection onto a user, thereby logging him in.
+// The function checks if the client is already logged in as another user
+// or if another client is logged in as the given user to avoid duplicate 
+// log ins. Invalid usernames and passwords are also checked. If valid 
+// credentials are provided and the user isn't already logged in, 
+// the servers maps are updated, to log the client in as a user.
 //
 // Parameters:
 // 	s - the server
@@ -554,13 +555,27 @@ func handleLogin(s *Server, conn net.Conn, payload []byte) {
 
 	// fmt.Printf("[Debugging] Received username: %s, password hash: %s as a login combination.\n", inputUsername, inputPwdHsh)
 
-	// Handle duplicate login
+	// Handle login request while being logged in already
+	s.mu.Lock()
+	_, clientLoggedIn := s.clientConnsRev[s.clientConns[conn]]
+	if clientLoggedIn {
+		fmt.Printf("[Log] '/login' as '%s' failed because client is already logged in as '%s'.\n", inputUsername, s.clientConns[conn])
+		msg    := "[Error] Login failed because you are already logged in as '" + s.clientConns[conn] + "'. Please log out first in order to log back in as another user."
+		errMsg := "[Error] Failed writing 'already logged in as another user' message to " + conn.RemoteAddr().String()
+		s.sendMessageToClientLocked(conn, msg, errMsg)
+
+		s.mu.Unlock()
+		return
+	}
+	s.mu.Unlock()
+
+	// Handle duplicate login of two clients as the same user
 	s.mu.Lock()
 	_, userLoggedIn := s.clientConnsRev[inputUsername]
 	if userLoggedIn {
 		fmt.Printf("[Log] '/login'failed because user '%s' was already logged in.\n", inputUsername)
 		msg    := "[Error] Login failed because user is already logged in."
-		errMsg := "[Error] Failed writing 'duplicate login' message to " + conn.LocalAddr().String()
+		errMsg := "[Error] Failed writing 'duplicate login' message to " + conn.RemoteAddr().String()
 		s.sendMessageToClientLocked(conn, msg, errMsg)
 
 		s.mu.Unlock()
@@ -574,7 +589,7 @@ func handleLogin(s *Server, conn net.Conn, payload []byte) {
 	if !userExists {
 		fmt.Println("[Log] '/login' failed because invalid username was given.")
 		msg    := "[Error] Invalid combiation of username and password given."
-		errMsg := "[Error] Failed writin 'invalid username' message to " + conn.LocalAddr().String()
+		errMsg := "[Error] Failed writin 'invalid username' message to " + conn.RemoteAddr().String()
 		s.sendMessageToClientLocked(conn, msg, errMsg)	
 
 		s.muShadow.Unlock()
@@ -623,7 +638,7 @@ func handleLogout(s *Server, conn net.Conn, payload []byte) {
 	s.clientConns[conn] = "anonymous"
 	s.mu.Unlock()
 
-	msg := "Logout successfully."
+	msg := "Logout successfull."
 	errMsg := "[Error] Failed writing 'logout successfull' message to " + conn.RemoteAddr().String()
 	s.sendMessageToClient(conn, msg, errMsg)
 
