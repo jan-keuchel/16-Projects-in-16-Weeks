@@ -15,7 +15,7 @@ As an improvement on the last project, another goal is to close conections prope
     - [x] '/login' - initiates the login process
         - [x] Query for username (locally)
         - [x] Query for passowrd (locally)
-    - [ ] '/logout' - logs out the user
+    - [x] '/logout' - logs out the user
     - [ ] '/register' - initiates the sign up process
         - [x] Query for username (locally) - No duplicate usernames
         - [x] query for passowrd (locally)
