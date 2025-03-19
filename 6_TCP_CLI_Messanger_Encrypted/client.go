@@ -18,6 +18,7 @@ var commandRequirementFunctions = map[string]CommandPreprocesser {
 	"/register": 	preprocessRegister,
 	"/help": 		preprocessHelp,
 	"/login": 		preprocessLogin,
+	"/logout": 		preprocessLogout,
 }
 
 type Client struct {
@@ -213,6 +214,15 @@ func preprocessLogin(c *Client, payload string) (string, error) {
 	res := command + " " + username + " " + string(pwdHsh)
 
 	return res, nil
+
+}
+
+func preprocessLogout(c *Client, payload string) (string, error) {
+
+	if len(strings.Fields(string(payload))) != 1 {
+		return "", errors.New("'/logout' command was given the wrong number of arguments. Plese just ust '/logout' without any further arguments in order to log out of the user account you're currently logged in as.")
+	}
+	return "/logout", nil
 
 }
 

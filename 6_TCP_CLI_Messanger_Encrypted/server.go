@@ -20,6 +20,7 @@ var commands = map[string]CommandHandler {
 	"/register": 	handleRegister,
 	"/help":  		handleHelp,
 	"/login": 		handleLogin,
+	"/logout": 	 	handleLogout,
 }
 
 var commandDescriptions = [...]string {
@@ -27,6 +28,7 @@ var commandDescriptions = [...]string {
 	"- '/quit': Signals the server to close the connection.",
 	"- '/register <username> <password>': Sends username and locally hashed password to the server to set up a new user. If the given username is already in use an error will be returned.",
 	"- '/login <username> <password>': Sends username and locally hashed password to the server to verify the combination of both. If valid you will be logged in. At 3 wrong login attempts this connection will be closed by the server.",
+	"- '/logout': Logs you out of the user account you are currently logged in as.",
 }
 
 type Message struct {
@@ -396,12 +398,12 @@ func (s *Server) sendMessageToClient(conn net.Conn, msg string, errMsg string) {
 
 	s.mu.Lock()
 	_, exists := s.clientConnsRev[s.clientConns[conn]]
-	fmt.Println("[Debugging] Current map:", s.clientConns)
-	fmt.Println("[Debugging] Current reverse map:", s.clientConnsRev)
-	fmt.Println("[Debugging] s.clientConns[conn] = ", s.clientConns[conn])
-	fmt.Println("[Debugging] s.clientConnsRev[s.clientConns[conn]] = ", s.clientConnsRev[s.clientConns[conn]])
+	// fmt.Println("[Debugging] Current map:", s.clientConns)
+	// fmt.Println("[Debugging] Current reverse map:", s.clientConnsRev)
+	// fmt.Println("[Debugging] s.clientConns[conn] = ", s.clientConns[conn])
+	// fmt.Println("[Debugging] s.clientConnsRev[s.clientConns[conn]] = ", s.clientConnsRev[s.clientConns[conn]])
 	if exists {
-		fmt.Println("[Debugging] user is loggin in. Personalizing message...")
+		// fmt.Println("[Debugging] user is loggin in. Personalizing message...")
 		username = s.clientConns[conn]
 	}
 	s.mu.Unlock()
@@ -480,7 +482,7 @@ func handleRegister(s *Server, conn net.Conn, payload []byte) {
 	username  := slicedPld[1]
 	pwdHsh 	  := slicedPld[2]
 
-	fmt.Printf("[Debugging] Received username: %s, password hash: %s\n", username, pwdHsh)
+	// fmt.Printf("[Debugging] Received username: %s, password hash: %s\n", username, pwdHsh)
 
 	s.muShadow.Lock()
 	_, exists := s.usrPwdMap[username]
@@ -550,7 +552,7 @@ func handleLogin(s *Server, conn net.Conn, payload []byte) {
 	inputUsername := slicedPld[1]
 	inputPwdHsh   := slicedPld[2]
 
-	fmt.Printf("[Debugging] Received username: %s, password hash: %s as a login combination.\n", inputUsername, inputPwdHsh)
+	// fmt.Printf("[Debugging] Received username: %s, password hash: %s as a login combination.\n", inputUsername, inputPwdHsh)
 
 	// Handle duplicate login
 	s.mu.Lock()
@@ -579,7 +581,7 @@ func handleLogin(s *Server, conn net.Conn, payload []byte) {
 		return
 	}
 
-	fmt.Printf("[Debugging] shadowfileHash: %s\ninputHash: %s\n", pwdHsh, inputPwdHsh)
+	// fmt.Printf("[Debugging] shadowfileHash: %s\ninputHash: %s\n", pwdHsh, inputPwdHsh)
 
 	// Handle wrong password
 	if pwdHsh != inputPwdHsh {
@@ -601,5 +603,23 @@ func handleLogin(s *Server, conn net.Conn, payload []byte) {
 	msg    := "Login successfull." 
 	errMsg := "[Error] Failed writing 'successfull login' message to " + conn.RemoteAddr().String()
 	s.sendMessageToClient(conn, msg, errMsg)
+
+}
+
+func handleLogout(s *Server, conn net.Conn, payload []byte) {
+
+	// TODO: Send success-message to client
+	fmt.Printf("Handling '/logout' command from %s...\n", conn.RemoteAddr())
+
+	s.mu.Lock()
+	delete(s.clientConnsRev, s.clientConns[conn])
+	s.clientConns[conn] = "anonymous"
+	s.mu.Unlock()
+
+	msg := "Logout successfully."
+	errMsg := "[Error] Failed writing 'logout successfull' message to " + conn.RemoteAddr().String()
+	s.sendMessageToClient(conn, msg, errMsg)
+
+	fmt.Println("[Log] Successfully logged out", conn.RemoteAddr())
 
 }
