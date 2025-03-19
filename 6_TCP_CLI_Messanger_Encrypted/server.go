@@ -606,6 +606,13 @@ func handleLogin(s *Server, conn net.Conn, payload []byte) {
 
 }
 
+// handleLogout removes the clients entry from the username-to-connection map
+// thereby logging him out.
+//
+// Parameters:
+// 	s - the server
+// 	conn - the clients connection
+// 	payload - the arguments of the command. Not used with this command.
 func handleLogout(s *Server, conn net.Conn, payload []byte) {
 
 	// TODO: Send success-message to client
