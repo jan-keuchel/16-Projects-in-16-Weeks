@@ -36,8 +36,11 @@ As an improvement on the last project, another goal is to close conections prope
 
 ## Open questions
 - [ ] How do I encrypt and decrypt the messages locally on the client?
+    - Symmetric encryption with Diffie-Hellman key exchange
 - [ ] Do I - locally -  store one key per client I want to write to?
+    - Yes, one key per chat
 - [ ] How do I distribute keys in a group chat?
+    - Diffie-Hellman key exchange
 
 ## Reflection and improvements
 

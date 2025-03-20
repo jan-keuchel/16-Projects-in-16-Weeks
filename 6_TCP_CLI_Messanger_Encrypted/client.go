@@ -165,6 +165,8 @@ func preprocessQuit(c *Client, payload string) (string, error) {
 
 func preprocessRegister(c *Client, payload string) (string, error) {
 
+	// TODO: Add character check. Only alphabetic characters for username permitted.
+
 	if len(strings.Fields(payload)) != 3 {
 		return "", errors.New("'/register' command was given the wrong number of arguments. Please provide username and password according to the following pattern: '/register <username> <password>'.")
 	}
