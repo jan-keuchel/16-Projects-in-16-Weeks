@@ -19,6 +19,9 @@ var commandRequirementFunctions = map[string]CommandPreprocesser {
 	"/help": 		preprocessHelp,
 	"/login": 		preprocessLogin,
 	"/logout": 		preprocessLogout,
+	"/newChat": 	preprocessNewChat,
+	"/accept": 		preprocessAccept,
+	"/decline": 	preprocessDecline,
 }
 
 type Client struct {
@@ -187,7 +190,7 @@ func preprocessRegister(c *Client, payload string) (string, error) {
 func preprocessHelp(c *Client, payload string) (string, error) {
 
 	if len(strings.Fields(payload)) != 1 {
-		return "", errors.New("'/help' command was given the wrong number of arguments. Plese just ust '/help' without any further arguments in order to show a list of available commands and their usecases.")
+		return "", errors.New("'/help' command was given the wrong number of arguments. Plese just use '/help' without any further arguments in order to show a list of available commands and their usecases.")
 	}
 	return "/help", nil
 
@@ -220,9 +223,43 @@ func preprocessLogin(c *Client, payload string) (string, error) {
 func preprocessLogout(c *Client, payload string) (string, error) {
 
 	if len(strings.Fields(string(payload))) != 1 {
-		return "", errors.New("'/logout' command was given the wrong number of arguments. Plese just ust '/logout' without any further arguments in order to log out of the user account you're currently logged in as.")
+		return "", errors.New("'/logout' command was given the wrong number of arguments. Plese just use '/logout' without any further arguments in order to log out of the user account you're currently logged in as.")
 	}
 	return "/logout", nil
 
 }
 
+func preprocessNewChat(c *Client, payload string) (string, error) {
+
+	if len(strings.Fields(string(payload))) != 2 {
+		return "", errors.New("'/newChat' command was given the wrong number of arguments. Plese use '/newChat <username>' in order to send a request to <username>.")
+	}
+
+	slicedPld := strings.Fields(payload)
+	command   := slicedPld[0]
+	user      := slicedPld[1]
+
+	res := command + " " + user 
+
+	return res, nil
+
+}
+
+func preprocessAccept(c *Client, payload string) (string, error) {
+
+	if len(strings.Fields(string(payload))) != 1 {
+		return "", errors.New("'/accept' command was given the wrong number of arguments. Plese just use '/accept' without any further arguments in order to accept the current chat request..")
+	}
+	return "/accept", nil
+
+
+}
+
+func preprocessDecline(c *Client, payload string) (string, error) {
+
+	if len(strings.Fields(string(payload))) != 1 {
+		return "", errors.New("'/decline' command was given the wrong number of arguments. Plese just use '/decline' without any further arguments in order to decline the current chat request..")
+	}
+	return "/decline", nil
+
+}
