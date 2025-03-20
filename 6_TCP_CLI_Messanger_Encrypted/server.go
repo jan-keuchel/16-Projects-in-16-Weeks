@@ -743,6 +743,15 @@ func handleAccept(s *Server, conn net.Conn, payload []byte) {
 
 }
 
+// handleDecline checks if there is a pending chat-request for the
+// user the client is logged in as. If so, that request is deleted
+// from the map of requests and thereby declined. A notifcation message
+// is sent to the sender of the request.
+//
+// Parameters:
+// 	s - the server
+// 	conn - the clients connection
+// 	payload - the arguments of the command. Not used with this command.
 func handleDecline(s *Server, conn net.Conn, payload []byte) {
 
 	fmt.Printf("Handling '/decline' command from %s...\n", conn.RemoteAddr())
