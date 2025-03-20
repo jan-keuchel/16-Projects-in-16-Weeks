@@ -21,6 +21,9 @@ var commands = map[string]CommandHandler {
 	"/help":  		handleHelp,
 	"/login": 		handleLogin,
 	"/logout": 	 	handleLogout,
+	"/newChat": 	handleNewChat,
+	"/accept": 		handleAccept,
+	"/decline": 	handleDecline,
 }
 
 var commandDescriptions = [...]string {
@@ -40,6 +43,7 @@ type Server struct {
 	listenAddr 	   	string
 	clientConns    	map[net.Conn]string
 	clientConnsRev	map[string]net.Conn
+	chatRequests	map[string]string	// Maps requests from request recipient to sender of the request
 	qtChs 		   	map[net.Conn]chan struct{}
 	msgChannel	   	chan Message
 	mu  		   	sync.Mutex
@@ -53,6 +57,7 @@ func NewServer(listenAddr string) *Server {
 		listenAddr:   	listenAddr,
 		clientConns:  	make(map[net.Conn]string),
 		clientConnsRev:	make(map[string]net.Conn),
+		chatRequests:   make(map[string]string),
 		qtChs:  	  	make(map[net.Conn]chan struct{}),
 		msgChannel:   	make(chan Message),
 		usrPwdMap: 	  	make(map[string]string),
@@ -643,5 +648,123 @@ func handleLogout(s *Server, conn net.Conn, payload []byte) {
 	s.sendMessageToClient(conn, msg, errMsg)
 
 	fmt.Println("[Log] Successfully logged out", conn.RemoteAddr())
+
+}
+
+func handleNewChat(s *Server, conn net.Conn, payload []byte) {
+
+	fmt.Printf("Handling '/newChat' command from %s...\n", conn.RemoteAddr())
+
+	reqRecipient := strings.Fields(string(payload))[1]
+
+	// Check if recipient is a registered user
+	s.muShadow.Lock()
+	_, isRegisteredUser := s.usrPwdMap[reqRecipient]
+	if !isRegisteredUser {
+		fmt.Printf("[Log] Chat request from %s to %s aborted. %s is no registered user.\n", s.clientConns[conn], reqRecipient, reqRecipient)
+		msg := "[Error] Chat request aborted. " + reqRecipient + " is no registered user."
+		errMsg := "[Error] Writing 'no registered user' message to " + conn.RemoteAddr().String()
+		s.sendMessageToClient(conn, msg, errMsg)
+		s.muShadow.Unlock()
+		return
+	}
+	s.muShadow.Unlock()
+
+	// Check if other user is online
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	_, recipientIsOnline := s.clientConnsRev[reqRecipient]
+	if !recipientIsOnline {
+		fmt.Printf("[Log] Chat request from %s to %s aborted. %s is offline.\n", s.clientConns[conn], reqRecipient, reqRecipient)
+		msg := "[Error] Chat request aborted. " + reqRecipient + " is currently offline. Please try again later."
+		errMsg := "[Error] Writing 'recipient offline' message to " + conn.RemoteAddr().String()
+		s.sendMessageToClientLocked(conn, msg, errMsg)
+		return
+	}
+
+	// Check if chat already exists.
+	// chat file names are of the pattern '<user1>:<user2>' in alphabetical username order
+	firstUser  := min(s.clientConns[conn], reqRecipient)
+	secondUser := max(s.clientConns[conn], reqRecipient)
+	chatPath   := serverChatDir + firstUser + ":" + secondUser
+
+	if fileExists(chatPath) {
+		fmt.Printf("[Log] Chat request from %s to %s aborted. Chat already exists.\n", s.clientConns[conn], reqRecipient)
+		msg := "[Error] Chat request aborted. This chat already exists."
+		errMsg := "[Error] Writing 'chat already exists' message to " + conn.RemoteAddr().String()
+		s.sendMessageToClientLocked(conn, msg, errMsg)
+		return
+	}
+
+	// Check for pending request
+	_, recipientHasPendingRequest := s.chatRequests[reqRecipient]
+	if recipientHasPendingRequest {
+		fmt.Printf("[Log] Chat request from %s to %s aborted. %s already has a pending request.\n", s.clientConns[conn], reqRecipient, reqRecipient)
+		msg := "[Error] Chat request aborted. " + reqRecipient + " already has a pending request."
+		errMsg := "[Error] Writing 'recipient has pending request' message to " + conn.RemoteAddr().String()
+		s.sendMessageToClientLocked(conn, msg, errMsg)
+		return
+	}
+
+	// Add request recipient to 'request-map'
+	s.chatRequests[reqRecipient] = s.clientConns[conn]
+
+	// Send request message to user
+	msg := "You have recieved a chat request from " + s.clientConns[conn] + ". Use '/accept' to accept that request or '/decline' to deny it."
+	errMsg := "[Error] Sending chat request to " + s.clientConnsRev[reqRecipient].RemoteAddr().String()
+	s.sendMessageToClientLocked(s.clientConnsRev[reqRecipient], msg, errMsg)
+
+}
+
+func handleAccept(s *Server, conn net.Conn, payload []byte) {
+
+	fmt.Printf("Handling '/accept' command from %s...\n", conn.RemoteAddr())
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Check if pending request exists
+	_, reqIsPending := s.chatRequests[s.clientConns[conn]]
+	if !reqIsPending {
+		fmt.Printf("[Log] Invalid '/accept' command. No request for %s pending.\n", conn.RemoteAddr())
+		msg := "[Error] '/accept' command aborted. There is no pending requst." 
+		errMsg := "[Error] Writing 'no pending request' message to " + conn.RemoteAddr().String()
+		s.sendMessageToClientLocked(conn, msg, errMsg)
+		return
+	}
+
+	fmt.Println("[Debugging] Request accepted.")
+	msg    := s.clientConns[conn] + " accepted your request."
+	errMsg := "[Error] Writing 'request accepted' message to " + s.chatRequests[s.clientConns[conn]]
+	s.sendMessageToClientLocked(s.clientConnsRev[s.chatRequests[s.clientConns[conn]]], msg, errMsg)
+
+	delete(s.chatRequests, s.clientConns[conn])
+
+}
+
+func handleDecline(s *Server, conn net.Conn, payload []byte) {
+
+	fmt.Printf("Handling '/decline' command from %s...\n", conn.RemoteAddr())
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Check if pending request exists
+	_, reqIsPending := s.chatRequests[s.clientConns[conn]]
+	if !reqIsPending {
+		fmt.Printf("[Log] Invalid '/decline' command. No request for %s pending.\n", conn.RemoteAddr())
+		msg := "[Error] '/decline' command aborted. There is no pending requst." 
+		errMsg := "[Error] Writing 'no pending request' message to " + conn.RemoteAddr().String()
+		s.sendMessageToClientLocked(conn, msg, errMsg)
+		return
+	}
+
+	fmt.Println("[Debugging] Request declined.")
+	msg    := s.clientConns[conn] + " declined your request."
+	errMsg := "[Error] Writing 'request declined' message to " + s.chatRequests[s.clientConns[conn]]
+	s.sendMessageToClientLocked(s.clientConnsRev[s.chatRequests[s.clientConns[conn]]], msg, errMsg)
+
+	delete(s.chatRequests, s.clientConns[conn])
 
 }
