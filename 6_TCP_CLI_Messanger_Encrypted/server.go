@@ -670,10 +670,20 @@ func handleNewChat(s *Server, conn net.Conn, payload []byte) {
 	}
 	s.muShadow.Unlock()
 
-	// Check if other user is online
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	
+	// Check if request initiator is logged in as a user
+	_, initiatorIsLoggedIn := s.clientConnsRev[s.clientConns[conn]]
+	if !initiatorIsLoggedIn {
+		fmt.Printf("[Log] Chat request from %s to %s aborted. %s is not logged in.\n", conn.RemoteAddr(), reqRecipient, conn.RemoteAddr())
+		msg := "[Error] Chat request aborted as you are not logged in as a user."
+		errMsg := "[Error] Writing 'not logged in as user' message to " + conn.RemoteAddr().String()
+		s.sendMessageToClientLocked(conn, msg, errMsg)
+		return
+	}
+
+	// Check if other user is online
 	_, recipientIsOnline := s.clientConnsRev[reqRecipient]
 	if !recipientIsOnline {
 		fmt.Printf("[Log] Chat request from %s to %s aborted. %s is offline.\n", s.clientConns[conn], reqRecipient, reqRecipient)
