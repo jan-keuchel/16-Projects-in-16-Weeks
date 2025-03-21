@@ -32,6 +32,9 @@ var commandDescriptions = [...]string {
 	"- '/register <username> <password>': Sends username and locally hashed password to the server to set up a new user. If the given username is already in use an error will be returned.",
 	"- '/login <username> <password>': Sends username and locally hashed password to the server to verify the combination of both. If valid you will be logged in. At 3 wrong login attempts this connection will be closed by the server.",
 	"- '/logout': Logs you out of the user account you are currently logged in as.",
+	"- '/newChat <username>': Will send a request to start a new chat to the given user. Only works if other user is online and the chat doesn't exist so far.",
+	"- '/accept': accept an incomming request to start a new chat.",
+	"- '/decline': decline an incomming request to start a new chat.",
 }
 
 type Message struct {
