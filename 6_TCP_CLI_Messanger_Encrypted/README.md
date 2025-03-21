@@ -20,7 +20,7 @@ As an improvement on the last project, another goal is to close conections prope
         - [x] Query for username (locally) - No duplicate usernames
         - [x] query for passowrd (locally)
         - [ ] Generate public-private key-pair
-    - [ ] '/newChat \<username\>' - Sends a chat request to the user specified
+    - [x] '/newChat \<username\>' - Sends a chat request to the user specified
         - [ ] The new chat will be assigned an ID
     - [ ] '/listChats' - lists the IDs and names of recipients of every chat
     - [ ] '/chat \<ID\>' - initiates switch to chat mode
