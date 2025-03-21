@@ -635,7 +635,6 @@ func handleLogin(s *Server, conn net.Conn, payload []byte) {
 // 	payload - the arguments of the command. Not used with this command.
 func handleLogout(s *Server, conn net.Conn, payload []byte) {
 
-	// TODO: Send success-message to client
 	fmt.Printf("Handling '/logout' command from %s...\n", conn.RemoteAddr())
 
 	s.mu.Lock()
@@ -651,6 +650,18 @@ func handleLogout(s *Server, conn net.Conn, payload []byte) {
 
 }
 
+// handleNewChat sends a request out to a given user. It checks for multiple
+// conditions to be met in order for it to be a valid request:
+//  - The recipient must be a registered user.
+//  - The recipient must be logged in as user (currently online).
+//  - The sender must be logged in as a user.
+//  - The chat must not exist already.
+//  - There must not be a different chat request pending for the recipient.
+//
+// Parameters:
+// 	s - the server
+// 	conn - the clients connection
+// 	payload - the arguments of the command. The recipient of the chat request.
 func handleNewChat(s *Server, conn net.Conn, payload []byte) {
 
 	fmt.Printf("Handling '/newChat' command from %s...\n", conn.RemoteAddr())
@@ -727,6 +738,17 @@ func handleNewChat(s *Server, conn net.Conn, payload []byte) {
 
 }
 
+// handleAccept checks if there is a pending chat request for the user
+// the client is logged in as. If there is one, that request is accepted.
+// Both request sender and acceptor are being notified that a new 
+// chat is created. 
+// Also checks for no duplicate chats and creates chat directory
+// if it does not exist yet.
+//
+// Parameters:
+// 	s - the server
+// 	conn - the clients connection
+// 	payload - the arguments of the command. Not used with this command.
 func handleAccept(s *Server, conn net.Conn, payload []byte) {
 
 	fmt.Printf("Handling '/accept' command from %s...\n", conn.RemoteAddr())
