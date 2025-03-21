@@ -724,8 +724,11 @@ func handleAccept(s *Server, conn net.Conn, payload []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	requestInitiator := s.chatRequests[s.clientConns[conn]]
+	requestAcceptor  := s.clientConns[conn]
+
 	// Check if pending request exists
-	_, reqIsPending := s.chatRequests[s.clientConns[conn]]
+	_, reqIsPending := s.chatRequests[requestAcceptor]
 	if !reqIsPending {
 		fmt.Printf("[Log] Invalid '/accept' command. No request for %s pending.\n", conn.RemoteAddr())
 		msg := "[Error] '/accept' command aborted. There is no pending requst." 
@@ -734,10 +737,46 @@ func handleAccept(s *Server, conn net.Conn, payload []byte) {
 		return
 	}
 
+	// Send acceptance message
 	fmt.Println("[Debugging] Request accepted.")
-	msg    := s.clientConns[conn] + " accepted your request."
-	errMsg := "[Error] Writing 'request accepted' message to " + s.chatRequests[s.clientConns[conn]]
-	s.sendMessageToClientLocked(s.clientConnsRev[s.chatRequests[s.clientConns[conn]]], msg, errMsg)
+	msg    := requestAcceptor + " accepted your request."
+	errMsg := "[Error] Writing 'request accepted' message to " + requestInitiator
+	s.sendMessageToClientLocked(s.clientConnsRev[requestInitiator], msg, errMsg)
+
+	// Determine chat participants in alphabetical order
+	// chat file names are of the pattern '<user1>:<user2>' in alphabetical username order
+	firstUser        := min(requestInitiator, requestAcceptor)
+	secondUser       := max(requestInitiator, requestAcceptor)
+	chatPath         := serverChatDir + firstUser + ":" + secondUser
+
+	// Create chat directory if it doesn't exist
+	if !fileExists(serverChatDir) {
+
+		err := os.MkdirAll(serverChatDir, 0700)
+		if err != nil {
+			fmt.Println("[Error] Creating directory for chats:", err)
+			return
+		}
+
+	}
+
+	// Create new chat file
+	chatFile, err := os.Create(chatPath)
+	if err != nil {
+		fmt.Println("[Error] Creating new chat:", err)
+		msg    := "[Error] An error occured while creating the new chat file."
+		errMsg := "[Error] Writing 'error while creating chat file' message to " + requestInitiator + ", " + requestAcceptor
+		s.sendMessageToClientLocked(conn, msg, errMsg)
+		s.sendMessageToClientLocked(s.clientConnsRev[requestInitiator], msg, errMsg)
+		return
+	}
+	defer chatFile.Close()
+
+	fmt.Println("[Log] Successfully created new chat file:", chatFile)
+	msg    = "Successfully created new chat."
+	errMsg = "[Error] Writing 'successfull chat creation' message to " + requestInitiator + ", " + requestAcceptor
+	s.sendMessageToClientLocked(conn, msg, errMsg)
+	s.sendMessageToClientLocked(s.clientConnsRev[requestInitiator], msg, errMsg)
 
 	delete(s.chatRequests, s.clientConns[conn])
 
