@@ -121,8 +121,6 @@ func (c *Client) connectToServer() {
 
 			length := uint32(len(jsonData))
 
-			fmt.Println("JSON Data length:", length)
-
 			errLen := binary.Write(conn, binary.BigEndian, length)
 			if errLen != nil {
 				fmt.Println("[Error] Sending message length failed:", errLen)
