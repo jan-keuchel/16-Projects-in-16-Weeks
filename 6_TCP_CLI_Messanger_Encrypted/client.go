@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"crypto/sha256"
+	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -84,6 +86,11 @@ func (c *Client) connectToServer() {
 			fmt.Println("[Log] Stopping client due to server disconnection.")
 			return
 		case input := <- inputCh:
+			
+			var packet = Packet{
+				MsgType: "MESSAGE",
+			}
+
 			if strings.HasPrefix(input, "/") {
 
 				command := strings.Fields(input)[0]
@@ -100,9 +107,29 @@ func (c *Client) connectToServer() {
 				}
 
 				input = preprocessedCommand
+				packet.MsgType = "COMMAND"
 
 			}
-			_, err := conn.Write([]byte(input))
+
+			packet.Payload = input
+
+			jsonData, errJ := json.Marshal(packet)
+			if errJ != nil {
+				fmt.Println("[Error] Marshalling data failed:", errJ)
+				return
+			}
+
+			length := uint32(len(jsonData))
+
+			fmt.Println("JSON Data length:", length)
+
+			errLen := binary.Write(conn, binary.BigEndian, length)
+			if errLen != nil {
+				fmt.Println("[Error] Sending message length failed:", errLen)
+				return
+			}
+
+			_, err := conn.Write(jsonData)
 			if err != nil {
 				fmt.Println("[Error] Writing to server:", err)
 				return
@@ -122,7 +149,6 @@ func (c *Client) connectToServer() {
 
 func (c *Client) listenToServer(conn net.Conn) {
 
-	b := make([]byte, 2048)
 	for {
 
 		select {
@@ -130,7 +156,22 @@ func (c *Client) listenToServer(conn net.Conn) {
 			fmt.Printf("[Log] No longer listening to server.")
 			return
 		default:
-			n, err := conn.Read(b)
+
+			var length uint32
+			errLen := binary.Read(conn, binary.BigEndian, &length)
+			if errLen != nil {
+				if errLen == io.EOF || errLen == io.ErrUnexpectedEOF {
+					fmt.Println("[Log] Server closed connection.")
+					close(c.quitCh)
+					return
+				}
+				fmt.Println("[Error] Reading length from server:", errLen)
+				close(c.quitCh)
+				return
+			}
+			data := make([]byte, length)
+
+			_, err := io.ReadFull(conn, data)
 			if err != nil {
 				if err == io.EOF {
 					fmt.Println("[Log] Server closed connection.")
@@ -141,9 +182,14 @@ func (c *Client) listenToServer(conn net.Conn) {
 				return
 			}
 
-			payload := b[:n]
+			var packet Packet
+			errUm := json.Unmarshal(data, &packet)
+			if errUm != nil {
+				fmt.Println("[Error] Unmarshalling server data failed:", errUm)
+				return
+			}
 
-			fmt.Printf("Message from server:\n%s\n", string(payload))
+			fmt.Printf("Received data from server.\nType: %s\nPayload:%s\n", packet.MsgType, string(packet.Payload))
 		}
 
 	}

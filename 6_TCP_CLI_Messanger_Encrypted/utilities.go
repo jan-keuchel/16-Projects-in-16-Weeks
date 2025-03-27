@@ -7,6 +7,11 @@ import (
 	"unicode"
 )
 
+type Packet struct {
+	MsgType string `json:"msgType"`
+	Payload	string `json:"payload"`
+}
+
 func isNumeric(s string) bool {
 
 	for _, r := range s {

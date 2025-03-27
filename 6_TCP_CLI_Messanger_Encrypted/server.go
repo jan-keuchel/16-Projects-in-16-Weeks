@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -310,10 +312,9 @@ func (s *Server) handleClientConnection(ctx context.Context,
 
 	fmt.Println("[Log] New client is now set up.")
 
-	b := make([]byte, 2048)
 	for {
 
-		err := conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+		err := conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
 		if err != nil {
 			fmt.Printf("[Error|%s] Setting up Read deadline:\n%s\n",conn.RemoteAddr(),  err)
 			return
@@ -327,7 +328,28 @@ func (s *Server) handleClientConnection(ctx context.Context,
 			fmt.Println("[Log] Received '/quit' command. Shutting down connection.")
 			return
 		default:
-			n, err := conn.Read(b)
+			var length uint32
+			errLen := binary.Read(conn, binary.BigEndian, &length)
+			if errLen != nil {
+				if netErr, ok := errLen.(net.Error); ok && netErr.Timeout() {
+					continue
+				}
+				if errLen == io.EOF {
+					fmt.Printf("[Log|%s] Client closed connection.\n", conn.RemoteAddr())
+					return
+				}
+				fmt.Println("[Error] Reading package length:", errLen)
+				return
+			}
+
+			// Extend deadline for reading the full payload
+            if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+                fmt.Printf("[Error|%s] Setting payload read deadline: %v\n", conn.RemoteAddr(), err)
+                return
+            }
+
+			data := make([]byte, length)
+			_, err := io.ReadFull(conn, data)
 			if err != nil {
 				// checks if err implements the net.Error interface
 				// if it does (ok = true), checks if a Timeout occured
@@ -341,10 +363,19 @@ func (s *Server) handleClientConnection(ctx context.Context,
 				fmt.Println("[Error] Reading message from client:", err)
 				return
 			}
-			payload := b[:n]
+
+			var packet Packet
+			errJ := json.Unmarshal(data, &packet)
+			if errJ != nil {
+				fmt.Println("[Error] Unmarshalling failed:", errJ)
+				return
+			}
+
+			fmt.Println("Received:", packet.Payload)
+
 			s.msgChannel <- Message{
 				sender:  conn,
-				payload: payload,
+				payload: []byte(packet.Payload),
 			}
 		}
 
@@ -418,7 +449,24 @@ func (s *Server) sendMessageToClient(conn net.Conn, msg string, errMsg string) {
 
 	personalizedMsg := "(" + username + ") " + msg
 
-	_, err := conn.Write([]byte(personalizedMsg))
+	packet := Packet{
+		MsgType: "MESSAGE",
+		Payload: personalizedMsg,
+	}
+
+	jsonData, errJ := json.Marshal(packet)
+	if errJ != nil {
+		fmt.Println("[Error] Marshalling message to json format:", errJ)
+		return
+	}
+
+	length := uint32(len(jsonData))
+	errLen := binary.Write(conn, binary.BigEndian, length)
+	if errLen != nil {
+		fmt.Println("[Error] Sending message length:", errLen)
+	}
+
+	_, err := conn.Write(jsonData)
 	if err != nil {
 		fmt.Println(errMsg + ":", err)
 		return
@@ -448,12 +496,28 @@ func (s *Server) sendMessageToClientLocked(conn net.Conn, msg string, errMsg str
 
 	personalizedMsg := "(" + username + ") " + msg
 
-	_, err := conn.Write([]byte(personalizedMsg))
+	packet := Packet{
+		MsgType: "MESSAGE",
+		Payload: personalizedMsg,
+	}
+
+	jsonData, errJ := json.Marshal(packet)
+	if errJ != nil {
+		fmt.Println("[Error] Marshalling message to json format:", errJ)
+		return
+	}
+
+	length := uint32(len(jsonData))
+	errLen := binary.Write(conn, binary.BigEndian, length)
+	if errLen != nil {
+		fmt.Println("[Error] Sending message length:", errLen)
+	}
+
+	_, err := conn.Write(jsonData)
 	if err != nil {
 		fmt.Println(errMsg + ":", err)
 		return
 	}
-	return
 
 }
 
