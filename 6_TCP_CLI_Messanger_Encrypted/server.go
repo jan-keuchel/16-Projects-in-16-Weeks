@@ -44,10 +44,34 @@ type Message struct {
 	payload []byte
 }
 
+type State int
+const (
+	LOGGED_OUT State = iota
+	LOGGING_IN
+	LOGGED_IN
+	CHATTING
+)
+
+type ClientState struct {
+	conn 		net.Conn
+	username	string
+	state 		State
+}
+
+func NewClientState(conn net.Conn) *ClientState {
+
+	return &ClientState{
+		conn: 	  conn,
+		username: "anonymous",
+		state: 	  LOGGED_OUT,
+	}
+
+}
+
 type Server struct {
 	listenAddr 	   	string
-	clientConns    	map[net.Conn]string
-	clientConnsRev	map[string]net.Conn
+	clientConns    	map[net.Conn]*ClientState // Maps from connection to client representation
+	clientConnsRev	map[string]*ClientState   // Maps from username to client representation
 	chatRequests	map[string]string	// Maps requests from request recipient to sender of the request
 	qtChs 		   	map[net.Conn]chan struct{}
 	msgChannel	   	chan Message
@@ -60,8 +84,8 @@ func NewServer(listenAddr string) *Server {
 
 	return &Server{
 		listenAddr:   	listenAddr,
-		clientConns:  	make(map[net.Conn]string),
-		clientConnsRev:	make(map[string]net.Conn),
+		clientConns:  	make(map[net.Conn]*ClientState),
+		clientConnsRev:	make(map[string]*ClientState),
 		chatRequests:   make(map[string]string),
 		qtChs:  	  	make(map[net.Conn]chan struct{}),
 		msgChannel:   	make(chan Message),
@@ -297,7 +321,7 @@ func (s *Server) handleClientConnection(ctx context.Context,
 
 	defer func() {
 		s.mu.Lock()
-		delete(s.clientConnsRev, s.clientConns[conn])
+		delete(s.clientConnsRev, s.clientConns[conn].username)
 		delete(s.clientConns, conn)
 		delete(s.qtChs, conn)
 		s.mu.Unlock()
@@ -306,7 +330,7 @@ func (s *Server) handleClientConnection(ctx context.Context,
 	}()
 
 	s.mu.Lock()
-	s.clientConns[conn] = "anonymous"
+	s.clientConns[conn] = NewClientState(conn)
 	s.qtChs[conn] 		= make(chan struct{})
 	s.mu.Unlock()
 
@@ -436,14 +460,15 @@ func (s *Server) sendMessageToClient(conn net.Conn, msg string, errMsg string) {
 	username := "anonymous"
 
 	s.mu.Lock()
-	_, exists := s.clientConnsRev[s.clientConns[conn]]
-	// fmt.Println("[Debugging] Current map:", s.clientConns)
-	// fmt.Println("[Debugging] Current reverse map:", s.clientConnsRev)
-	// fmt.Println("[Debugging] s.clientConns[conn] = ", s.clientConns[conn])
-	// fmt.Println("[Debugging] s.clientConnsRev[s.clientConns[conn]] = ", s.clientConnsRev[s.clientConns[conn]])
+	_, exists := s.clientConnsRev[s.clientConns[conn].username]
+	fmt.Println("[Debugging] Current map:", s.clientConns)
+	fmt.Println("[Debugging] Current reverse map:", s.clientConnsRev)
+	fmt.Println("[Debugging] s.clientConns[conn] = ", s.clientConns[conn])
+	fmt.Println("[Debugging] s.clientConnsRev[s.clientConns[conn]] = ", s.clientConnsRev[s.clientConns[conn].username])
+	fmt.Println("[Debugging] s.clientConns[conn].state = ", s.clientConns[conn].state)
 	if exists {
 		// fmt.Println("[Debugging] user is loggin in. Personalizing message...")
-		username = s.clientConns[conn]
+		username = s.clientConns[conn].username
 	}
 	s.mu.Unlock()
 
@@ -489,9 +514,9 @@ func (s *Server) sendMessageToClientLocked(conn net.Conn, msg string, errMsg str
 
 	username := "anonymous"
 
-	_, exists := s.clientConnsRev[s.clientConns[conn]]
+	_, exists := s.clientConnsRev[s.clientConns[conn].username]
 	if exists {
-		username = s.clientConns[conn]
+		username = s.clientConns[conn].username
 	}
 
 	personalizedMsg := "(" + username + ") " + msg
@@ -629,10 +654,10 @@ func handleLogin(s *Server, conn net.Conn, payload []byte) {
 
 	// Handle login request while being logged in already
 	s.mu.Lock()
-	_, clientLoggedIn := s.clientConnsRev[s.clientConns[conn]]
+	_, clientLoggedIn := s.clientConnsRev[s.clientConns[conn].username]
 	if clientLoggedIn {
-		fmt.Printf("[Log] '/login' as '%s' failed because client is already logged in as '%s'.\n", inputUsername, s.clientConns[conn])
-		msg    := "[Error] Login failed because you are already logged in as '" + s.clientConns[conn] + "'. Please log out first in order to log back in as another user."
+		fmt.Printf("[Log] '/login' as '%s' failed because client is already logged in as '%s'.\n", inputUsername, s.clientConns[conn].username)
+		msg    := "[Error] Login failed because you are already logged in as '" + s.clientConns[conn].username + "'. Please log out first in order to log back in as another user."
 		errMsg := "[Error] Failed writing 'already logged in as another user' message to " + conn.RemoteAddr().String()
 		s.sendMessageToClientLocked(conn, msg, errMsg)
 
@@ -683,8 +708,9 @@ func handleLogin(s *Server, conn net.Conn, payload []byte) {
 	s.muShadow.Unlock()
 
 	s.mu.Lock()
-	s.clientConns[conn] = inputUsername
-	s.clientConnsRev[inputUsername] = conn
+	s.clientConns[conn].username 	= inputUsername
+	s.clientConns[conn].state 		= LOGGED_IN
+	s.clientConnsRev[inputUsername] = s.clientConns[conn]
 	s.mu.Unlock()
 
 	msg    := "Login successfull." 
@@ -705,8 +731,9 @@ func handleLogout(s *Server, conn net.Conn, payload []byte) {
 	fmt.Printf("Handling '/logout' command from %s...\n", conn.RemoteAddr())
 
 	s.mu.Lock()
-	delete(s.clientConnsRev, s.clientConns[conn])
-	s.clientConns[conn] = "anonymous"
+	delete(s.clientConnsRev, s.clientConns[conn].username)
+	s.clientConns[conn].username = "anonymous"
+	s.clientConns[conn].state    = LOGGED_OUT
 	s.mu.Unlock()
 
 	msg := "Logout successfull."
@@ -739,7 +766,7 @@ func handleNewChat(s *Server, conn net.Conn, payload []byte) {
 	s.muShadow.Lock()
 	_, isRegisteredUser := s.usrPwdMap[reqRecipient]
 	if !isRegisteredUser {
-		fmt.Printf("[Log] Chat request from %s to %s aborted. %s is no registered user.\n", s.clientConns[conn], reqRecipient, reqRecipient)
+		fmt.Printf("[Log] Chat request from %s to %s aborted. %s is no registered user.\n", s.clientConns[conn].username, reqRecipient, reqRecipient)
 		msg := "[Error] Chat request aborted. " + reqRecipient + " is no registered user."
 		errMsg := "[Error] Writing 'no registered user' message to " + conn.RemoteAddr().String()
 		s.sendMessageToClient(conn, msg, errMsg)
@@ -752,7 +779,7 @@ func handleNewChat(s *Server, conn net.Conn, payload []byte) {
 	defer s.mu.Unlock()
 	
 	// Check if request initiator is logged in as a user
-	_, initiatorIsLoggedIn := s.clientConnsRev[s.clientConns[conn]]
+	_, initiatorIsLoggedIn := s.clientConnsRev[s.clientConns[conn].username]
 	if !initiatorIsLoggedIn {
 		fmt.Printf("[Log] Chat request from %s to %s aborted. %s is not logged in.\n", conn.RemoteAddr(), reqRecipient, conn.RemoteAddr())
 		msg := "[Error] Chat request aborted as you are not logged in as a user."
@@ -764,7 +791,7 @@ func handleNewChat(s *Server, conn net.Conn, payload []byte) {
 	// Check if other user is online
 	_, recipientIsOnline := s.clientConnsRev[reqRecipient]
 	if !recipientIsOnline {
-		fmt.Printf("[Log] Chat request from %s to %s aborted. %s is offline.\n", s.clientConns[conn], reqRecipient, reqRecipient)
+		fmt.Printf("[Log] Chat request from %s to %s aborted. %s is offline.\n", s.clientConns[conn].username, reqRecipient, reqRecipient)
 		msg := "[Error] Chat request aborted. " + reqRecipient + " is currently offline. Please try again later."
 		errMsg := "[Error] Writing 'recipient offline' message to " + conn.RemoteAddr().String()
 		s.sendMessageToClientLocked(conn, msg, errMsg)
@@ -773,12 +800,12 @@ func handleNewChat(s *Server, conn net.Conn, payload []byte) {
 
 	// Check if chat already exists.
 	// chat file names are of the pattern '<user1>:<user2>' in alphabetical username order
-	firstUser  := min(s.clientConns[conn], reqRecipient)
-	secondUser := max(s.clientConns[conn], reqRecipient)
+	firstUser  := min(s.clientConns[conn].username, reqRecipient)
+	secondUser := max(s.clientConns[conn].username, reqRecipient)
 	chatPath   := serverChatDir + firstUser + ":" + secondUser
 
 	if fileExists(chatPath) {
-		fmt.Printf("[Log] Chat request from %s to %s aborted. Chat already exists.\n", s.clientConns[conn], reqRecipient)
+		fmt.Printf("[Log] Chat request from %s to %s aborted. Chat already exists.\n", s.clientConns[conn].username, reqRecipient)
 		msg := "[Error] Chat request aborted. This chat already exists."
 		errMsg := "[Error] Writing 'chat already exists' message to " + conn.RemoteAddr().String()
 		s.sendMessageToClientLocked(conn, msg, errMsg)
@@ -788,7 +815,7 @@ func handleNewChat(s *Server, conn net.Conn, payload []byte) {
 	// Check for pending request
 	_, recipientHasPendingRequest := s.chatRequests[reqRecipient]
 	if recipientHasPendingRequest {
-		fmt.Printf("[Log] Chat request from %s to %s aborted. %s already has a pending request.\n", s.clientConns[conn], reqRecipient, reqRecipient)
+		fmt.Printf("[Log] Chat request from %s to %s aborted. %s already has a pending request.\n", s.clientConns[conn].username, reqRecipient, reqRecipient)
 		msg := "[Error] Chat request aborted. " + reqRecipient + " already has a pending request."
 		errMsg := "[Error] Writing 'recipient has pending request' message to " + conn.RemoteAddr().String()
 		s.sendMessageToClientLocked(conn, msg, errMsg)
@@ -796,12 +823,12 @@ func handleNewChat(s *Server, conn net.Conn, payload []byte) {
 	}
 
 	// Add request recipient to 'request-map'
-	s.chatRequests[reqRecipient] = s.clientConns[conn]
+	s.chatRequests[reqRecipient] = s.clientConns[conn].username
 
 	// Send request message to user
-	msg := "You have recieved a chat request from " + s.clientConns[conn] + ". Use '/accept' to accept that request or '/decline' to deny it."
-	errMsg := "[Error] Sending chat request to " + s.clientConnsRev[reqRecipient].RemoteAddr().String()
-	s.sendMessageToClientLocked(s.clientConnsRev[reqRecipient], msg, errMsg)
+	msg := "You have recieved a chat request from " + s.clientConns[conn].username + ". Use '/accept' to accept that request or '/decline' to deny it."
+	errMsg := "[Error] Sending chat request to " + s.clientConnsRev[reqRecipient].conn.RemoteAddr().String()
+	s.sendMessageToClientLocked(s.clientConnsRev[reqRecipient].conn, msg, errMsg)
 
 }
 
@@ -823,8 +850,8 @@ func handleAccept(s *Server, conn net.Conn, payload []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	requestInitiator := s.chatRequests[s.clientConns[conn]]
-	requestAcceptor  := s.clientConns[conn]
+	requestInitiator := s.chatRequests[s.clientConns[conn].username]
+	requestAcceptor  := s.clientConns[conn].username
 
 	// Check if pending request exists
 	_, reqIsPending := s.chatRequests[requestAcceptor]
@@ -840,7 +867,7 @@ func handleAccept(s *Server, conn net.Conn, payload []byte) {
 	fmt.Println("[Debugging] Request accepted.")
 	msg    := requestAcceptor + " accepted your request."
 	errMsg := "[Error] Writing 'request accepted' message to " + requestInitiator
-	s.sendMessageToClientLocked(s.clientConnsRev[requestInitiator], msg, errMsg)
+	s.sendMessageToClientLocked(s.clientConnsRev[requestInitiator].conn, msg, errMsg)
 
 	// Determine chat participants in alphabetical order
 	// chat file names are of the pattern '<user1>:<user2>' in alphabetical username order
@@ -866,7 +893,7 @@ func handleAccept(s *Server, conn net.Conn, payload []byte) {
 		msg    := "[Error] An error occured while creating the new chat file."
 		errMsg := "[Error] Writing 'error while creating chat file' message to " + requestInitiator + ", " + requestAcceptor
 		s.sendMessageToClientLocked(conn, msg, errMsg)
-		s.sendMessageToClientLocked(s.clientConnsRev[requestInitiator], msg, errMsg)
+		s.sendMessageToClientLocked(s.clientConnsRev[requestInitiator].conn, msg, errMsg)
 		return
 	}
 	defer chatFile.Close()
@@ -875,9 +902,9 @@ func handleAccept(s *Server, conn net.Conn, payload []byte) {
 	msg    = "Successfully created new chat."
 	errMsg = "[Error] Writing 'successfull chat creation' message to " + requestInitiator + ", " + requestAcceptor
 	s.sendMessageToClientLocked(conn, msg, errMsg)
-	s.sendMessageToClientLocked(s.clientConnsRev[requestInitiator], msg, errMsg)
+	s.sendMessageToClientLocked(s.clientConnsRev[requestInitiator].conn, msg, errMsg)
 
-	delete(s.chatRequests, s.clientConns[conn])
+	delete(s.chatRequests, s.clientConns[conn].username)
 
 }
 
@@ -898,7 +925,7 @@ func handleDecline(s *Server, conn net.Conn, payload []byte) {
 	defer s.mu.Unlock()
 
 	// Check if pending request exists
-	_, reqIsPending := s.chatRequests[s.clientConns[conn]]
+	_, reqIsPending := s.chatRequests[s.clientConns[conn].username]
 	if !reqIsPending {
 		fmt.Printf("[Log] Invalid '/decline' command. No request for %s pending.\n", conn.RemoteAddr())
 		msg := "[Error] '/decline' command aborted. There is no pending requst." 
@@ -908,10 +935,10 @@ func handleDecline(s *Server, conn net.Conn, payload []byte) {
 	}
 
 	fmt.Println("[Debugging] Request declined.")
-	msg    := s.clientConns[conn] + " declined your request."
-	errMsg := "[Error] Writing 'request declined' message to " + s.chatRequests[s.clientConns[conn]]
-	s.sendMessageToClientLocked(s.clientConnsRev[s.chatRequests[s.clientConns[conn]]], msg, errMsg)
+	msg    := s.clientConns[conn].username + " declined your request."
+	errMsg := "[Error] Writing 'request declined' message to " + s.chatRequests[s.clientConns[conn].username]
+	s.sendMessageToClientLocked(s.clientConnsRev[s.chatRequests[s.clientConns[conn].username]].conn, msg, errMsg)
 
-	delete(s.chatRequests, s.clientConns[conn])
+	delete(s.chatRequests, s.clientConns[conn].username)
 
 }
