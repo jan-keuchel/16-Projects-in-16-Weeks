@@ -489,14 +489,13 @@ func (s *Server) sendMessageToClient(conn net.Conn, msg string, errMsg string) {
 	errLen := binary.Write(conn, binary.BigEndian, length)
 	if errLen != nil {
 		fmt.Println("[Error] Sending message length:", errLen)
+		return
 	}
 
 	_, err := conn.Write(jsonData)
 	if err != nil {
 		fmt.Println(errMsg + ":", err)
-		return
 	}
-	return
 
 }
 
@@ -650,7 +649,7 @@ func handleLogin(s *Server, conn net.Conn, payload []byte) {
 	inputUsername := slicedPld[1]
 	inputPwdHsh   := slicedPld[2]
 
-	// fmt.Printf("[Debugging] Received username: %s, password hash: %s as a login combination.\n", inputUsername, inputPwdHsh)
+	fmt.Printf("[Debugging] Received username: %s, password hash: %s as a login combination.\n", inputUsername, inputPwdHsh)
 
 	// Handle login request while being logged in already
 	s.mu.Lock()

@@ -11,9 +11,12 @@ import (
 	"net"
 	"os"
 	"strings"
+	"time"
+
+	"golang.org/x/term"
 )
 
-type CommandPreprocesser func(c *Client, payload string) (string, error)
+type CommandPreprocesser func(c *Client, conn net.Conn, payload string) (string, error)
 
 var commandRequirementFunctions = map[string]CommandPreprocesser {
 	"/quit": 		preprocessQuit,
@@ -27,15 +30,17 @@ var commandRequirementFunctions = map[string]CommandPreprocesser {
 }
 
 type Client struct {
-	serverAddr string
-	quitCh 	   chan bool
+	serverAddr     string
+	quitCh 	       chan bool
+	inDialogueMode bool
 }
 
 func NewClient(serverAddr string) *Client {
 	
 	return &Client{
-		serverAddr: serverAddr,
-		quitCh:     make(chan bool),
+		serverAddr:     serverAddr,
+		quitCh:         make(chan bool),
+		inDialogueMode: false,
 	}
 
 }
@@ -69,12 +74,23 @@ func (c *Client) connectToServer() {
 
 	go func() {
 
-		scanner := bufio.NewScanner(os.Stdin)
-		for scanner.Scan() {
-			inputCh <- scanner.Text()
-		}
-		if err := scanner.Err(); err != nil {
-			errCh <- err
+		reader := bufio.NewReader(os.Stdin)
+		for  {
+
+			if c.inDialogueMode {
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+
+			fmt.Print("> ")
+			input, err := reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("[Error] Reading input from Stdin:", err)
+				close(inputCh)
+				return
+			}
+			inputCh <- strings.TrimSpace(input)
+
 		}
 
 	}()
@@ -86,10 +102,7 @@ func (c *Client) connectToServer() {
 			fmt.Println("[Log] Stopping client due to server disconnection.")
 			return
 		case input := <- inputCh:
-			
-			var packet = Packet{
-				MsgType: "MESSAGE",
-			}
+			msgType := "MESSAGE"
 
 			if strings.HasPrefix(input, "/") {
 
@@ -100,38 +113,19 @@ func (c *Client) connectToServer() {
 					continue
 				}
 
-				preprocessedCommand, err := preproFunc(c, input)
+				preprocessedCommand, err := preproFunc(c,conn, input)
 				if err != nil {
 					fmt.Println("[Error] Wrong use of command:", err)
 					continue
 				}
 
-				input = preprocessedCommand
-				packet.MsgType = "COMMAND"
+				input   = preprocessedCommand
+				msgType = "COMMAND"
 
 			}
 
-			packet.Payload = input
-
-			jsonData, errJ := json.Marshal(packet)
-			if errJ != nil {
-				fmt.Println("[Error] Marshalling data failed:", errJ)
-				return
-			}
-
-			length := uint32(len(jsonData))
-
-			errLen := binary.Write(conn, binary.BigEndian, length)
-			if errLen != nil {
-				fmt.Println("[Error] Sending message length failed:", errLen)
-				return
-			}
-
-			_, err := conn.Write(jsonData)
-			if err != nil {
-				fmt.Println("[Error] Writing to server:", err)
-				return
-			}
+			errMsg := "Writing message to server failed"
+			c.sendMessageToServer(conn, input, msgType, errMsg)
 		case err := <- errCh:
 			if err != io.EOF {
 				fmt.Println("[Error] Reading input from stdin:", err)
@@ -141,6 +135,33 @@ func (c *Client) connectToServer() {
 			return
 		}
 
+	}
+
+}
+
+func (c *Client) sendMessageToServer(conn net.Conn, payload string, msgType string, errMsg string) {
+
+	packet := Packet{
+		MsgType: msgType,
+		Payload: payload,
+	}
+
+	jsonData, errJ := json.Marshal(packet)
+	if errJ != nil {
+		fmt.Println("[Error] Marshalling message to json format:", errJ)
+		return
+	}
+
+	length := uint32(len(jsonData))
+	errLen := binary.Write(conn, binary.BigEndian, length)
+	if errLen != nil {
+		fmt.Println("[Error] Sending message length:", errLen)
+		return
+	}
+
+	_, err := conn.Write(jsonData)
+	if err != nil {
+		fmt.Println(errMsg + ":", err)
 	}
 
 }
@@ -198,7 +219,7 @@ func (c *Client) listenToServer(conn net.Conn) {
 // ---------- Handler ----------
 // -----------------------------
 
-func preprocessQuit(c *Client, payload string) (string, error) {
+func preprocessQuit(c *Client, conn net.Conn, payload string) (string, error) {
 
 	if len(strings.Fields(payload)) != 1 {
 		return "", errors.New("'/quit' command was given the wrong number of arguments. Please just use '/quit' without any further arguments in order to quit the connection to the server.")
@@ -207,7 +228,7 @@ func preprocessQuit(c *Client, payload string) (string, error) {
 
 }
 
-func preprocessRegister(c *Client, payload string) (string, error) {
+func preprocessRegister(c *Client, conn net.Conn, payload string) (string, error) {
 
 	// TODO: Add character check. Only alphabetic characters for username permitted.
 
@@ -233,7 +254,7 @@ func preprocessRegister(c *Client, payload string) (string, error) {
 
 }
 
-func preprocessHelp(c *Client, payload string) (string, error) {
+func preprocessHelp(c *Client, conn net.Conn, payload string) (string, error) {
 
 	if len(strings.Fields(payload)) != 1 {
 		return "", errors.New("'/help' command was given the wrong number of arguments. Plese just use '/help' without any further arguments in order to show a list of available commands and their usecases.")
@@ -242,16 +263,34 @@ func preprocessHelp(c *Client, payload string) (string, error) {
 
 }
 
-func preprocessLogin(c *Client, payload string) (string, error) {
+func preprocessLogin(c *Client, conn net.Conn, payload string) (string, error) {
 
-	if len(strings.Fields(string(payload))) != 3 {
-		return "", errors.New("'/login' command was given the wrong number of arguments. Please provide username and password according to the following pattern: '/login <username> <password>'.")
+	if len(strings.Fields(string(payload))) != 1 {
+		return "", errors.New("'/login' command was given the wrong number of arguments. Please just use '/login' without any other arguments in order to start the login process.")
 	}
 
-	slicedPld := strings.Fields(payload)
-	command   := slicedPld[0]
-	username  := slicedPld[1]
-	pwd   	  := []byte(slicedPld[2])
+	c.inDialogueMode = true
+	defer func ()  {
+		c.inDialogueMode = false
+	}();
+
+	scanner := bufio.NewScanner(os.Stdin)
+	fmt.Println("Login-process started. Enter your username and press 'Return':")
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			fmt.Println("[Error] Reading from stdin:", err)
+		}		
+		return "", errors.New("'/login' command failed to read username.")
+	}
+	username := scanner.Text()
+
+	fmt.Println("Now enter your password (input hidden):")
+	pwd, errPW := term.ReadPassword(int(os.Stdin.Fd()))
+	if errPW != nil {
+		fmt.Println("[Error] Reading password failed:", errPW)
+		return "", errPW
+	}
+	fmt.Println()
 
 	hash := sha256.New()
 	_, err := hash.Write(pwd)
@@ -260,13 +299,14 @@ func preprocessLogin(c *Client, payload string) (string, error) {
 	}
 	pwdHsh := hash.Sum(nil)
 
-	res := command + " " + username + " " + string(pwdHsh)
+	res := payload + " " + username + " " + string(pwdHsh)
+	fmt.Println("[Log] Now sending login data to the server...")
 
 	return res, nil
 
 }
 
-func preprocessLogout(c *Client, payload string) (string, error) {
+func preprocessLogout(c *Client, conn net.Conn, payload string) (string, error) {
 
 	if len(strings.Fields(string(payload))) != 1 {
 		return "", errors.New("'/logout' command was given the wrong number of arguments. Plese just use '/logout' without any further arguments in order to log out of the user account you're currently logged in as.")
@@ -275,7 +315,7 @@ func preprocessLogout(c *Client, payload string) (string, error) {
 
 }
 
-func preprocessNewChat(c *Client, payload string) (string, error) {
+func preprocessNewChat(c *Client, conn net.Conn, payload string) (string, error) {
 
 	if len(strings.Fields(string(payload))) != 2 {
 		return "", errors.New("'/newChat' command was given the wrong number of arguments. Plese use '/newChat <username>' in order to send a request to <username>.")
@@ -291,7 +331,7 @@ func preprocessNewChat(c *Client, payload string) (string, error) {
 
 }
 
-func preprocessAccept(c *Client, payload string) (string, error) {
+func preprocessAccept(c *Client, conn net.Conn, payload string) (string, error) {
 
 	if len(strings.Fields(string(payload))) != 1 {
 		return "", errors.New("'/accept' command was given the wrong number of arguments. Plese just use '/accept' without any further arguments in order to accept the current chat request..")
@@ -301,7 +341,7 @@ func preprocessAccept(c *Client, payload string) (string, error) {
 
 }
 
-func preprocessDecline(c *Client, payload string) (string, error) {
+func preprocessDecline(c *Client, conn net.Conn, payload string) (string, error) {
 
 	if len(strings.Fields(string(payload))) != 1 {
 		return "", errors.New("'/decline' command was given the wrong number of arguments. Plese just use '/decline' without any further arguments in order to decline the current chat request..")
